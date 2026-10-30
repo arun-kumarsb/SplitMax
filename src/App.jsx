@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   INITIAL_GROUPS,
   INITIAL_MEMBERS,
@@ -11,6 +11,7 @@ import {
   runSanityChecks,
 } from './utils/expenseLogic';
 import { sounds } from './utils/audio';
+import { api } from './utils/api';
 
 // Components
 import Header from './components/Header';
@@ -24,22 +25,29 @@ import SettleUpModal from './components/SettleUpModal';
 import ActivityFeedModal from './components/ActivityFeedModal';
 import GroupModal from './components/GroupModal';
 import FloatingControls from './components/FloatingControls';
+import AuthModal from './components/AuthModal';
+import JoinGroupModal from './components/JoinGroupModal';
 
 const STORAGE_KEY_GROUPS = 'splitmax_groups_v1';
 const STORAGE_KEY_MEMBERS = 'splitmax_members_v1';
 const STORAGE_KEY_ACTIVITY = 'splitmax_activity_v1';
-const STORAGE_KEY_USER = 'splitmax_current_user_v1';
 const STORAGE_KEY_DARK = 'splitmax_dark_mode_v1';
 const STORAGE_KEY_MUTE = 'splitmax_muted_v1';
 
 export default function App() {
-  // Run pure sanity checks in development on load
+  // 1. Math Sanity Checks on mount
   useEffect(() => {
-    const checkResults = runSanityChecks();
-    console.log('⚡ [SPLIT//MAX] Math Sanity Checks:', checkResults);
+    const checks = runSanityChecks();
+    console.log('⚡ [SPLIT//MAX] Math Sanity Checks:', checks);
   }, []);
 
-  // 1. Persistent State
+  // 2. User & Auth State
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+
+  // 3. Local / Remote Data State
   const [groups, setGroups] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_GROUPS);
@@ -71,14 +79,6 @@ export default function App() {
     return groups[0]?.id || 'grp_goa';
   });
 
-  const [currentUserId, setCurrentUserId] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY_USER) || 'm_rahul';
-    } catch {
-      return 'm_rahul';
-    }
-  });
-
   const [isDark, setIsDark] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEY_DARK) === 'true';
@@ -95,10 +95,10 @@ export default function App() {
     }
   });
 
-  // Undo history stack
+  // Undo Stack
   const [undoStack, setUndoStack] = useState([]);
 
-  // Modal Visibility States
+  // Modals Visibility
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
 
@@ -110,41 +110,127 @@ export default function App() {
 
   const [isActivityOpen, setIsActivityOpen] = useState(false);
 
-  // Mobile View Navigation Tab: 'dashboard' | 'expenses' | 'balances'
+  // Mobile View Navigation Tab
   const [mobileTab, setMobileTab] = useState('dashboard');
 
-  // Sync to localStorage
+  // Check if localStorage has old data to import
+  const hasLocalData = Boolean(
+    currentUser && localStorage.getItem(STORAGE_KEY_GROUPS)
+  );
+
+  // Check login status on mount
   useEffect(() => {
+    api
+      .getMe()
+      .then((res) => {
+        if (res.user) {
+          setCurrentUser(res.user);
+        }
+      })
+      .catch(() => {
+        // Not logged in, defaults to offline mode
+      })
+      .finally(() => {
+        setAuthChecking(false);
+      });
+  }, []);
+
+  // Fetch groups when user logs in or changes
+  const fetchUserGroups = useCallback(async () => {
+    if (!currentUser) return;
     try {
-      localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify(groups));
-    } catch (e) {
-      console.error(e);
+      const res = await api.getGroups();
+      if (res.groups && res.groups.length > 0) {
+        setGroups(res.groups);
+        if (!res.groups.some((g) => g.id === activeGroupId)) {
+          setActiveGroupId(res.groups[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch groups:', err);
     }
-  }, [groups]);
+  }, [currentUser, activeGroupId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_MEMBERS, JSON.stringify(members));
-    } catch (e) {
-      console.error(e);
+    if (currentUser) {
+      fetchUserGroups();
     }
-  }, [members]);
+  }, [currentUser]);
+
+  // Fetch active group details from backend when logged in
+  const fetchActiveGroupDetails = useCallback(async () => {
+    if (!currentUser || !activeGroupId) return;
+    try {
+      const res = await api.getGroup(activeGroupId);
+      if (res.group) {
+        const g = res.group;
+        setGroups((prev) =>
+          prev.map((item) => (item.id === g.id ? { ...item, ...g } : item))
+        );
+        if (g.members) setMembers(g.members);
+        if (g.activities) setActivities(g.activities);
+      }
+    } catch (err) {
+      console.error('Failed to fetch group details:', err);
+    }
+  }, [currentUser, activeGroupId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_ACTIVITY, JSON.stringify(activities));
-    } catch (e) {
-      console.error(e);
+    if (currentUser) {
+      fetchActiveGroupDetails();
     }
-  }, [activities]);
+  }, [currentUser, activeGroupId]);
 
+  // Rule: Refetch on window focus and every ~15s while group is open
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_USER, currentUserId);
-    } catch (e) {
-      console.error(e);
+    if (!currentUser) return;
+
+    const onFocus = () => {
+      fetchActiveGroupDetails();
+    };
+    window.addEventListener('focus', onFocus);
+
+    const interval = setInterval(() => {
+      fetchActiveGroupDetails();
+    }, 15000);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [currentUser, fetchActiveGroupDetails]);
+
+  // Check URL query parameters for invite code join
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const joinCode = params.get('join') || params.get('invite');
+    if (joinCode) {
+      if (currentUser) {
+        api.joinGroup(joinCode).then((res) => {
+          sounds.playSuccess();
+          fetchUserGroups();
+          if (res.group) setActiveGroupId(res.group.id);
+        }).catch((err) => {
+          alert(`Failed to join group: ${err.message}`);
+        });
+      } else {
+        setIsJoinModalOpen(true);
+      }
     }
-  }, [currentUserId]);
+  }, [currentUser]);
+
+  // Sync to localStorage when offline
+  useEffect(() => {
+    if (!currentUser) {
+      try {
+        localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify(groups));
+        localStorage.setItem(STORAGE_KEY_MEMBERS, JSON.stringify(members));
+        localStorage.setItem(STORAGE_KEY_ACTIVITY, JSON.stringify(activities));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [groups, members, activities, currentUser]);
 
   useEffect(() => {
     try {
@@ -173,21 +259,40 @@ export default function App() {
     id: 'grp_default',
     name: 'General',
     emoji: '📁',
+    currency: 'INR',
     expenses: [],
     settlements: [],
     memberIds: [],
   };
 
-  const groupMembers = members.filter((m) =>
-    (activeGroup.memberIds || []).includes(m.id)
-  );
+  const groupCurrency = activeGroup.currency || 'INR';
 
-  const currentMember = members.find((m) => m.id === currentUserId) || members[0];
+  // Group members list
+  const groupMembers = activeGroup.members && activeGroup.members.length > 0
+    ? activeGroup.members
+    : members.filter((m) =>
+        (activeGroup.memberIds || []).includes(m.id)
+      );
 
-  // Mathematical Calculations
+  // Determine current active user in the group
+  let currentMember = null;
+  if (currentUser) {
+    currentMember = groupMembers.find(
+      (m) => m.userId === currentUser.id || m.name?.toLowerCase().includes(currentUser.username.toLowerCase())
+    );
+  }
+  if (!currentMember) {
+    currentMember = groupMembers[0] || {
+      id: 'm_guest',
+      name: currentUser?.display_name || 'You',
+      emoji: currentUser?.emoji || '⚡',
+      color: currentUser?.color || '#FF2E93',
+    };
+  }
+
+  // Mathematical Calculations in group currency
   const expenses = activeGroup.expenses || [];
   const settlements = activeGroup.settlements || [];
-
   const totalGroupSpend = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   // Net Balances Map
@@ -200,19 +305,18 @@ export default function App() {
   const bilateralDebts = calculateBilateralDebts(groupMembers, expenses, settlements);
 
   // User Specific Stats
-  const userNetBalance = netBalances[currentUserId] || 0;
-
+  const userNetBalance = netBalances[currentMember.id] || 0;
   const userConsumedShare = expenses.reduce((acc, exp) => {
-    if (exp.splits && exp.splits[currentUserId] !== undefined) {
-      return acc + Number(exp.splits[currentUserId]);
+    if (exp.splits && exp.splits[currentMember.id] !== undefined) {
+      return acc + Number(exp.splits[currentMember.id]);
     }
     return acc;
   }, 0);
 
-  // Helper to push undo snapshot before mutation
+  // Push undo snapshot
   const pushUndoSnapshot = () => {
     setUndoStack((prev) => [
-      ...prev.slice(-10), // keep last 10 snapshots
+      ...prev.slice(-10),
       {
         groups: JSON.parse(JSON.stringify(groups)),
         activities: JSON.parse(JSON.stringify(activities)),
@@ -220,168 +324,261 @@ export default function App() {
     ]);
   };
 
-  // 2. Action Handlers
+  // ==========================================
+  // ACTION HANDLERS (Online API or Offline Local)
+  // ==========================================
 
   // Save Expense (Add or Edit)
-  const handleSaveExpense = (expenseData) => {
-    pushUndoSnapshot();
-
-    const isEdit = Boolean(editingExpense);
-    setGroups((prevGroups) =>
-      prevGroups.map((g) => {
-        if (g.id !== activeGroupId) return g;
-
-        let updatedExpenses = [];
-        if (isEdit) {
-          updatedExpenses = (g.expenses || []).map((e) =>
-            e.id === expenseData.id ? expenseData : e
-          );
+  const handleSaveExpense = async (expenseData) => {
+    if (currentUser) {
+      try {
+        if (expenseData.id && editingExpense) {
+          await api.updateExpense(activeGroupId, expenseData.id, expenseData);
         } else {
-          updatedExpenses = [expenseData, ...(g.expenses || [])];
+          await api.createExpense(activeGroupId, expenseData);
         }
-
-        return {
-          ...g,
-          expenses: updatedExpenses,
-        };
-      })
-    );
-
-    // Log Activity
-    const newActivity = {
-      id: `act_${Date.now()}`,
-      type: isEdit ? 'expense_edit' : 'expense_add',
-      timestamp: new Date().toISOString(),
-      groupId: activeGroupId,
-      groupName: activeGroup.name,
-      description: isEdit
-        ? `Edited expense "${expenseData.description}" (${expenseData.amount})`
-        : `Added expense "${expenseData.description}" for ${expenseData.amount}`,
-      amount: expenseData.amount,
-      data: expenseData,
-    };
-
-    setActivities((prev) => [newActivity, ...prev]);
+        await fetchActiveGroupDetails();
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Failed to save expense: ${err.message}`);
+      }
+    } else {
+      // Offline fallback
+      pushUndoSnapshot();
+      const isEdit = Boolean(editingExpense);
+      setGroups((prev) =>
+        prev.map((g) => {
+          if (g.id !== activeGroupId) return g;
+          const newExp = isEdit
+            ? (g.expenses || []).map((e) => (e.id === expenseData.id ? expenseData : e))
+            : [expenseData, ...(g.expenses || [])];
+          return { ...g, expenses: newExp };
+        })
+      );
+    }
     setEditingExpense(null);
   };
 
   // Delete Expense
-  const handleDeleteExpense = (expenseId) => {
-    pushUndoSnapshot();
-
-    const targetExpense = expenses.find((e) => e.id === expenseId);
-
-    setGroups((prevGroups) =>
-      prevGroups.map((g) => {
-        if (g.id !== activeGroupId) return g;
-        return {
-          ...g,
-          expenses: (g.expenses || []).filter((e) => e.id !== expenseId),
-        };
-      })
-    );
-
-    // Log Activity
-    const newActivity = {
-      id: `act_${Date.now()}`,
-      type: 'expense_delete',
-      timestamp: new Date().toISOString(),
-      groupId: activeGroupId,
-      groupName: activeGroup.name,
-      description: `Deleted expense "${targetExpense?.description || 'Item'}"`,
-      amount: targetExpense?.amount,
-      data: targetExpense,
-    };
-
-    setActivities((prev) => [newActivity, ...prev]);
+  const handleDeleteExpense = async (expenseId) => {
+    if (currentUser) {
+      try {
+        await api.deleteExpense(activeGroupId, expenseId);
+        await fetchActiveGroupDetails();
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Failed to delete expense: ${err.message}`);
+      }
+    } else {
+      pushUndoSnapshot();
+      setGroups((prev) =>
+        prev.map((g) => {
+          if (g.id !== activeGroupId) return g;
+          return {
+            ...g,
+            expenses: (g.expenses || []).filter((e) => e.id !== expenseId),
+          };
+        })
+      );
+    }
   };
 
   // Record Settlement
-  const handleRecordSettlement = (settlementData) => {
-    pushUndoSnapshot();
-
-    setGroups((prevGroups) =>
-      prevGroups.map((g) => {
-        if (g.id !== activeGroupId) return g;
-        return {
-          ...g,
-          settlements: [settlementData, ...(g.settlements || [])],
-        };
-      })
-    );
-
-    const fromM = members.find((m) => m.id === settlementData.from)?.name || 'Someone';
-    const toM = members.find((m) => m.id === settlementData.to)?.name || 'Someone';
-
-    const newActivity = {
-      id: `act_${Date.now()}`,
-      type: 'settlement',
-      timestamp: new Date().toISOString(),
-      groupId: activeGroupId,
-      groupName: activeGroup.name,
-      description: `${fromM} paid ${toM} ₹${settlementData.amount.toLocaleString('en-IN')}`,
-      amount: settlementData.amount,
-      data: settlementData,
-    };
-
-    setActivities((prev) => [newActivity, ...prev]);
+  const handleRecordSettlement = async (settlementData) => {
+    if (currentUser) {
+      try {
+        await api.createSettlement(activeGroupId, settlementData);
+        await fetchActiveGroupDetails();
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Failed to record settlement: ${err.message}`);
+      }
+    } else {
+      pushUndoSnapshot();
+      const stl = {
+        ...settlementData,
+        id: `stl_${Date.now()}`,
+        from: settlementData.from_member,
+        to: settlementData.to_member,
+      };
+      setGroups((prev) =>
+        prev.map((g) => {
+          if (g.id !== activeGroupId) return g;
+          return {
+            ...g,
+            settlements: [stl, ...(g.settlements || [])],
+          };
+        })
+      );
+    }
     setSettlePrefill(null);
   };
 
   // Undo Last Action
-  const handleUndoLastAction = () => {
-    if (undoStack.length === 0) return;
-    const lastSnapshot = undoStack[undoStack.length - 1];
-    setUndoStack((prev) => prev.slice(0, -1));
-
-    setGroups(lastSnapshot.groups);
-    setActivities(lastSnapshot.activities);
+  const handleUndoLastAction = async () => {
+    if (currentUser) {
+      try {
+        await api.undoAction(activeGroupId);
+        await fetchActiveGroupDetails();
+        sounds.playSuccess();
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Failed to undo: ${err.message}`);
+      }
+    } else {
+      if (undoStack.length === 0) return;
+      const last = undoStack[undoStack.length - 1];
+      setUndoStack((prev) => prev.slice(0, -1));
+      setGroups(last.groups);
+      setActivities(last.activities);
+      sounds.playSuccess();
+    }
   };
 
-  // Create / Edit Group
-  const handleSaveGroup = (groupData) => {
-    pushUndoSnapshot();
-    const isEdit = Boolean(groupToEdit);
-
-    if (isEdit) {
-      setGroups((prev) =>
-        prev.map((g) => (g.id === groupData.id ? { ...g, ...groupData } : g))
-      );
+  // Create or Edit Group
+  const handleSaveGroup = async (groupData) => {
+    if (currentUser) {
+      try {
+        if (groupToEdit) {
+          // If editing name/palette, update locally or via endpoint
+          setGroups((prev) =>
+            prev.map((g) => (g.id === groupData.id ? { ...g, ...groupData } : g))
+          );
+        } else {
+          const res = await api.createGroup(groupData);
+          if (res.group) {
+            setGroups((prev) => [res.group, ...prev]);
+            setActiveGroupId(res.group.id);
+          }
+        }
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Failed to save group: ${err.message}`);
+      }
     } else {
-      setGroups((prev) => [...prev, groupData]);
-      setActiveGroupId(groupData.id);
+      pushUndoSnapshot();
+      const isEdit = Boolean(groupToEdit);
+      if (isEdit) {
+        setGroups((prev) =>
+          prev.map((g) => (g.id === groupData.id ? { ...g, ...groupData } : g))
+        );
+      } else {
+        const newG = {
+          ...groupData,
+          id: `grp_${Date.now()}`,
+          expenses: [],
+          settlements: [],
+        };
+        setGroups((prev) => [...prev, newG]);
+        setActiveGroupId(newG.id);
+      }
     }
     setGroupToEdit(null);
   };
 
-  // Delete Group
-  const handleDeleteGroup = (groupIdToDelete) => {
-    if (groups.length <= 1) {
-      sounds.playBuzzer();
-      alert('You must keep at least one group in the tracker!');
-      return;
+  // Delete Group (creator only)
+  const handleDeleteGroup = async (groupIdToDelete) => {
+    if (currentUser) {
+      try {
+        await api.deleteGroup(groupIdToDelete);
+        const remaining = groups.filter((g) => g.id !== groupIdToDelete);
+        setGroups(remaining);
+        if (remaining.length > 0) setActiveGroupId(remaining[0].id);
+        sounds.playSuccess();
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Delete failed: ${err.message}`);
+      }
+    } else {
+      if (groups.length <= 1) {
+        sounds.playBuzzer();
+        alert('You must keep at least one group in the tracker!');
+        return;
+      }
+      pushUndoSnapshot();
+      const remaining = groups.filter((g) => g.id !== groupIdToDelete);
+      setGroups(remaining);
+      setActiveGroupId(remaining[0].id);
+      sounds.playSuccess();
     }
-    pushUndoSnapshot();
-    const remaining = groups.filter((g) => g.id !== groupIdToDelete);
-    setGroups(remaining);
-    setActiveGroupId(remaining[0].id);
   };
 
   // Add Member
-  const handleAddNewMember = (newMember) => {
-    setMembers((prev) => [...prev, newMember]);
+  const handleAddNewMember = async (newMember) => {
+    if (currentUser) {
+      try {
+        await api.addMember(activeGroupId, {
+          display_name: newMember.name,
+          emoji: newMember.emoji,
+          color: newMember.color,
+        });
+        await fetchActiveGroupDetails();
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Could not add member: ${err.message}`);
+      }
+    } else {
+      setMembers((prev) => [...prev, newMember]);
+    }
   };
 
-  // Reset Demo Data
-  const handleResetDemoData = () => {
-    localStorage.removeItem(STORAGE_KEY_GROUPS);
-    localStorage.removeItem(STORAGE_KEY_MEMBERS);
-    localStorage.removeItem(STORAGE_KEY_ACTIVITY);
-    setGroups(INITIAL_GROUPS);
-    setMembers(INITIAL_MEMBERS);
-    setActivities(INITIAL_ACTIVITY);
-    setActiveGroupId('grp_goa');
-    setUndoStack([]);
+  // Import Local Data into Neon account
+  const handleImportLocalData = async () => {
+    try {
+      const localGroups = JSON.parse(localStorage.getItem(STORAGE_KEY_GROUPS) || '[]');
+      const localMembers = JSON.parse(localStorage.getItem(STORAGE_KEY_MEMBERS) || '[]');
+      if (localGroups.length === 0) {
+        alert('No local data found in this browser to import.');
+        return;
+      }
+      await api.importLocalData(localGroups, localMembers);
+      // Clean up localStorage to prevent duplicate imports
+      localStorage.removeItem(STORAGE_KEY_GROUPS);
+      localStorage.removeItem(STORAGE_KEY_MEMBERS);
+      await fetchUserGroups();
+      alert('Local data successfully imported into your Neon cloud account!');
+    } catch (err) {
+      sounds.playBuzzer();
+      alert(`Import failed: ${err.message}`);
+    }
+  };
+
+  // Load Demo Group into Neon account
+  const handleLoadDemoGroup = async () => {
+    if (currentUser) {
+      try {
+        const res = await api.loadDemoGroup();
+        if (res.group) {
+          setGroups((prev) => [res.group, ...prev]);
+          setActiveGroupId(res.group.id);
+          await fetchActiveGroupDetails();
+        }
+      } catch (err) {
+        sounds.playBuzzer();
+        alert(`Failed to load demo group: ${err.message}`);
+      }
+    } else {
+      // Reset local demo data
+      setGroups(INITIAL_GROUPS);
+      setMembers(INITIAL_MEMBERS);
+      setActivities(INITIAL_ACTIVITY);
+      setActiveGroupId('grp_goa');
+      setUndoStack([]);
+    }
+  };
+
+  // Logout
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+      setCurrentUser(null);
+      setGroups(INITIAL_GROUPS);
+      setMembers(INITIAL_MEMBERS);
+      setActiveGroupId('grp_goa');
+      sounds.playSuccess();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (
@@ -390,10 +587,11 @@ export default function App() {
       {/* 1. TOP MARQUEE TICKER */}
       <MarqueeTicker
         totalSpend={totalGroupSpend}
-        youOwe={userNetBalance < 0 ? Math.abs(userNetBalance) : 0}
-        youGetBack={userNetBalance > 0 ? userNetBalance : 0}
+        youOwe={userNetBalance < -0.005 ? Math.abs(userNetBalance) : 0}
+        youGetBack={userNetBalance > 0.005 ? userNetBalance : 0}
         activeGroupName={activeGroup.name}
         expenseCount={expenses.length}
+        groupCurrency={groupCurrency}
       />
 
       {/* 2. MAXIMALIST HEADER & CONTROLS */}
@@ -409,15 +607,18 @@ export default function App() {
           setGroupToEdit(grp);
           setIsGroupModalOpen(true);
         }}
-        members={members}
-        currentUserId={currentUserId}
-        onSelectUser={(uId) => setCurrentUserId(uId)}
+        currentUser={currentUser}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onLogout={handleLogout}
+        onOpenJoinGroup={() => setIsJoinModalOpen(true)}
         isDark={isDark}
         onToggleDark={() => setIsDark(!isDark)}
         isMuted={isMuted}
         onToggleMute={() => setIsMuted(!isMuted)}
         onOpenActivity={() => setIsActivityOpen(true)}
-        onResetDemoData={handleResetDemoData}
+        onLoadDemoGroup={handleLoadDemoGroup}
+        onImportLocalData={handleImportLocalData}
+        hasLocalData={hasLocalData}
       />
 
       {/* 3. MAIN DASHBOARD CONTENT */}
@@ -427,27 +628,44 @@ export default function App() {
         <div className="flex flex-wrap items-center justify-between gap-3 mt-4 mb-2">
           <div className="flex items-center gap-2">
             <span
-              className="text-2xl sm:text-3xl p-2 border-3 border-black rounded-lg brutal-shadow-sm -rotate-2"
-              style={{ backgroundColor: activeGroup.signatureColor || '#FF7A00' }}
+              className="text-2xl sm:text-3xl p-2 border-3 border-black rounded-lg brutal-shadow-sm -rotate-2 min-h-[44px] flex items-center justify-center"
+              style={{ backgroundColor: activeGroup.signatureColor || activeGroup.signature_color || '#FF7A00' }}
             >
               {activeGroup.emoji}
             </span>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="font-display text-xl sm:text-3xl text-black dark:text-white tracking-wide">
                   {activeGroup.name}
                 </h1>
-                <span className="hidden sm:inline-block text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#B6FF00] text-black rounded font-bold">
+                <span className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#B6FF00] text-black rounded font-bold">
                   {groupMembers.length} MEMBERS
                 </span>
+                <span className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#FFE600] text-black rounded font-bold">
+                  {groupCurrency}
+                </span>
+                {(activeGroup.inviteCode || activeGroup.invite_code) && (
+                  <button
+                    onClick={() => {
+                      const code = activeGroup.inviteCode || activeGroup.invite_code;
+                      navigator.clipboard.writeText(code);
+                      sounds.playSuccess();
+                      alert(`Invite code copied: ${code}`);
+                    }}
+                    title="Click to copy invite code"
+                    className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#00F0FF] text-black rounded font-bold hover:bg-[#4cf2ff] brutal-btn"
+                  >
+                    CODE: {activeGroup.inviteCode || activeGroup.invite_code}
+                  </button>
+                )}
               </div>
               <p className="text-xs font-handwriting text-gray-600 dark:text-gray-300">
-                Viewing as <strong>{currentMember.name}</strong> • Real-time zero-loss paise math
+                Logged in as <strong>{currentMember.name}</strong> • 100% integer paise precision
               </p>
             </div>
           </div>
 
-          {/* Quick Action Pill Buttons */}
+          {/* Quick Action Pill Buttons (Min 40x40px tap target) */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -455,7 +673,7 @@ export default function App() {
                 setSettlePrefill(null);
                 setIsSettleOpen(true);
               }}
-              className="bg-[#B6FF00] hover:bg-[#caff43] text-black font-heading text-xs px-3.5 py-2 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5"
+              className="bg-[#B6FF00] hover:bg-[#caff43] text-black font-heading text-xs px-3.5 py-2.5 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px]"
             >
               <span>💸 Settle Up</span>
             </button>
@@ -466,7 +684,7 @@ export default function App() {
                 setEditingExpense(null);
                 setIsAddExpenseOpen(true);
               }}
-              className="bg-[#FFE600] hover:bg-[#fff04d] text-black font-heading text-xs px-3.5 py-2 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5"
+              className="bg-[#FFE600] hover:bg-[#fff04d] text-black font-heading text-xs px-3.5 py-2.5 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px]"
             >
               <span>+ Add Expense</span>
             </button>
@@ -476,7 +694,7 @@ export default function App() {
         {/* Desktop View & Mobile Tab Router */}
         <div className="space-y-6">
           
-          {/* Dashboard Stats Bento Bar (Always on Desktop; or when tab == 'dashboard' on mobile) */}
+          {/* Dashboard Stats Bento Bar */}
           <div className={`transition-all ${mobileTab !== 'dashboard' ? 'hidden sm:block' : 'block'}`}>
             <DashboardStats
               totalGroupSpend={totalGroupSpend}
@@ -484,6 +702,7 @@ export default function App() {
               userNetBalance={userNetBalance}
               currentMember={currentMember}
               expenseCount={expenses.length}
+              groupCurrency={groupCurrency}
               onOpenSettle={() => {
                 setSettlePrefill(null);
                 setIsSettleOpen(true);
@@ -497,7 +716,7 @@ export default function App() {
             />
           </div>
 
-          {/* Balances & Debt Minimization Section (Always on Desktop; or when tab == 'balances' on mobile) */}
+          {/* Balances & Debt Minimization Section */}
           <div className={`transition-all ${mobileTab !== 'balances' ? 'hidden sm:block' : 'block'}`}>
             <BalancesSection
               group={activeGroup}
@@ -512,11 +731,12 @@ export default function App() {
             />
           </div>
 
-          {/* Expenses List & Filters Section (Always on Desktop; or when tab == 'expenses' on mobile) */}
+          {/* Expenses List & Filters Section */}
           <div className={`transition-all ${mobileTab !== 'expenses' ? 'hidden sm:block' : 'block'}`}>
             <ExpensesList
               expenses={expenses}
               members={groupMembers}
+              groupCurrency={groupCurrency}
               onEditExpense={(exp) => {
                 setEditingExpense(exp);
                 setIsAddExpenseOpen(true);
@@ -545,6 +765,28 @@ export default function App() {
       />
 
       {/* 5. MODALS */}
+      {/* Auth Modal (Login / Register) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={(user) => {
+          setCurrentUser(user);
+          fetchUserGroups();
+        }}
+        api={api}
+      />
+
+      {/* Join Group with Invite Code Modal */}
+      <JoinGroupModal
+        isOpen={isJoinModalOpen}
+        onClose={() => setIsJoinModalOpen(false)}
+        onJoinSuccess={(joinedGroup) => {
+          fetchUserGroups();
+          if (joinedGroup) setActiveGroupId(joinedGroup.id);
+        }}
+        api={api}
+      />
+
       {/* Add / Edit Expense Modal */}
       <AddExpenseModal
         isOpen={isAddExpenseOpen}
@@ -555,7 +797,7 @@ export default function App() {
         onSaveExpense={handleSaveExpense}
         members={groupMembers}
         editingExpense={editingExpense}
-        activeGroupId={activeGroupId}
+        groupCurrency={groupCurrency}
       />
 
       {/* Settle Up Modal */}
@@ -566,6 +808,8 @@ export default function App() {
           setSettlePrefill(null);
         }}
         members={groupMembers}
+        bilateralDebts={bilateralDebts}
+        groupCurrency={groupCurrency}
         onRecordSettlement={handleRecordSettlement}
         prefill={settlePrefill}
       />
@@ -576,7 +820,8 @@ export default function App() {
         onClose={() => setIsActivityOpen(false)}
         activities={activities}
         onUndoLastAction={handleUndoLastAction}
-        canUndo={undoStack.length > 0}
+        canUndo={currentUser ? activities.length > 0 : undoStack.length > 0}
+        groupCurrency={groupCurrency}
       />
 
       {/* Group Create/Edit Modal */}
@@ -591,6 +836,7 @@ export default function App() {
         onSaveGroup={handleSaveGroup}
         onDeleteGroup={handleDeleteGroup}
         onAddNewMember={handleAddNewMember}
+        currentUserId={currentUser?.id}
       />
 
     </div>

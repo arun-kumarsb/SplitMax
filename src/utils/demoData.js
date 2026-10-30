@@ -26,7 +26,7 @@ export const CATEGORIES = [
 
 export const INITIAL_MEMBERS = [
   { id: 'm_rahul', name: 'Rahul (You)', emoji: '⚡', color: '#FF2E93', isUser: true },
-  { id: 'm_priya', name: 'Priya', emoji: '🦄', color: '#FFE600', isUser: false },
+  { id: 'm_priya', name: 'Priya', emoji: '🦄', color: '#FFE600', isUser: true },
   { id: 'm_amit', name: 'Amit', emoji: '🦁', color: '#2B2BFF', isUser: false },
   { id: 'm_sneha', name: 'Sneha', emoji: '🦊', color: '#B6FF00', isUser: false },
   { id: 'm_vikram', name: 'Vikram', emoji: '👾', color: '#FF7A00', isUser: false },

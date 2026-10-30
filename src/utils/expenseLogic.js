@@ -1,12 +1,43 @@
 // Pure Expense, Split, and Debt Simplification Math Utilities
 // All monetary math is handled internally in PAISE (integers) to prevent floating-point leaks.
 
+export const MAX_AMOUNT = 10000000; // ₹1,00,00,000 cap
+export const MAX_PAISE = 1000000000n; // 1,000,000,000 paise
+
 export const CURRENCY_SYMBOLS = {
   INR: '₹',
   USD: '$',
   EUR: '€',
   GBP: '£',
 };
+
+/**
+ * Validate monetary amount:
+ * - Must be greater than 0
+ * - Cannot exceed ₹1,00,00,000 (10,000,000)
+ * - Maximum 2 decimal places
+ */
+export function validateAmount(val) {
+  if (val === undefined || val === null || val === '') {
+    return { isValid: false, error: 'Amount is required.' };
+  }
+  const num = Number(val);
+  if (isNaN(num) || num <= 0) {
+    return { isValid: false, error: 'Amount must be greater than 0.' };
+  }
+  if (num > MAX_AMOUNT) {
+    return { isValid: false, error: 'Amount cannot exceed ₹1,00,00,000.' };
+  }
+  // Check decimal places
+  const str = String(val);
+  if (str.includes('.')) {
+    const decimals = str.split('.')[1];
+    if (decimals && decimals.length > 2) {
+      return { isValid: false, error: 'Maximum 2 decimal places allowed.' };
+    }
+  }
+  return { isValid: true, error: null };
+}
 
 /**
  * Format paise or float to formatted currency string
@@ -32,12 +63,13 @@ export function toPaise(rupees) {
  * Converts integer paise to rupee float
  */
 export function toRupees(paise) {
-  return paise / 100;
+  return Number(paise) / 100;
 }
 
 /**
  * Calculate member shares based on split method
- * Guarantees zero-sum and assigns remaining paise to primary payer/first participant
+ * Guarantees zero-sum and distributes leftover paise one each across participants deterministically!
+ * e.g. 0.05 split 3 ways (5 paise) -> 0.02, 0.02, 0.01 (sum = 0.05)
  */
 export function calculateSplits({
   totalAmount,
@@ -46,7 +78,6 @@ export function calculateSplits({
   exactValues = {}, // memberId -> entered amount
   percentageValues = {}, // memberId -> entered percentage
   shareValues = {}, // memberId -> entered share count
-  payerId,
 }) {
   const totalPaise = toPaise(totalAmount);
   const memberIds = selectedMemberIds || [];
@@ -67,10 +98,9 @@ export function calculateSplits({
       owedPaise[id] = baseShare;
     });
 
-    // Payer (if in participants) or the first participant absorbs the remainder paise
-    const remainderRecipient = memberIds.includes(payerId) ? payerId : memberIds[0];
-    if (remainderRecipient) {
-      owedPaise[remainderRecipient] += remainder;
+    // Distribute remainder 1 paisa each to the first `remainder` participants deterministically
+    for (let i = 0; i < remainder; i++) {
+      owedPaise[memberIds[i]] += 1;
     }
 
     return { owedPaise, isValid: true, remainingPaise: 0, error: null };
@@ -108,11 +138,11 @@ export function calculateSplits({
     });
 
     if (isPctValid) {
-      // Assign residual paise from floor rounding
+      // Distribute residual paise from floor rounding 1 each across participants deterministically
       const remainder = totalPaise - sumAllocatedPaise;
-      const target = memberIds.includes(payerId) ? payerId : memberIds[0];
-      if (target) {
-        owedPaise[target] += remainder;
+      for (let i = 0; i < remainder; i++) {
+        const target = memberIds[i % memberIds.length];
+        owedPaise[target] += 1;
       }
     }
 
@@ -142,11 +172,11 @@ export function calculateSplits({
       sumAllocated += share;
     });
 
-    // Assign residual paise from rounding
+    // Distribute residual paise 1 each across participants deterministically
     const remainder = totalPaise - sumAllocated;
-    const target = memberIds.includes(payerId) ? payerId : memberIds[0];
-    if (target) {
-      owedPaise[target] += remainder;
+    for (let i = 0; i < remainder; i++) {
+      const target = memberIds[i % memberIds.length];
+      owedPaise[target] += 1;
     }
 
     return { owedPaise, isValid: true, remainingPaise: 0, error: null };
@@ -158,7 +188,7 @@ export function calculateSplits({
 /**
  * Calculates net balance for every member in the group
  * Net = Total Paid - Total Owed
- * Returns map of memberId -> net amount in rupees
+ * Returns map of memberId -> net amount in rupees (computed from paise)
  */
 export function calculateNetBalances(members = [], expenses = [], settlements = []) {
   const netPaiseMap = {};
@@ -354,21 +384,22 @@ export function calculateBilateralDebts(members = [], expenses = [], settlements
  */
 export function formatWhatsAppSummary(group, members, netBalances, simplifiedTransactions) {
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
+  const groupCurrency = group.currency || 'INR';
   const totalSpend = group.expenses?.reduce((acc, e) => acc + Number(e.amount || 0), 0) || 0;
 
   let text = `⚡ *SPLIT//MAX EXPENSE SUMMARY* ⚡\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━\n`;
   text += `📁 *Group:* ${group.emoji} ${group.name}\n`;
-  text += `💰 *Total Group Spend:* ₹${totalSpend.toLocaleString('en-IN')}\n`;
+  text += `💰 *Total Group Spend:* ${formatCurrency(totalSpend, groupCurrency)}\n`;
   text += `📅 *Generated On:* ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}\n\n`;
 
   text += `📊 *NET MEMBER BALANCES:*\n`;
   members.forEach((m) => {
     const net = netBalances[m.id] || 0;
     if (net > 0) {
-      text += `• ${m.name}: Gets back ₹${net.toLocaleString('en-IN', { minimumFractionDigits: 0 })} 🟢\n`;
+      text += `• ${m.name}: Gets back ${formatCurrency(net, groupCurrency)} 🟢\n`;
     } else if (net < 0) {
-      text += `• ${m.name}: Owes ₹${Math.abs(net).toLocaleString('en-IN', { minimumFractionDigits: 0 })} 🔴\n`;
+      text += `• ${m.name}: Owes ${formatCurrency(Math.abs(net), groupCurrency)} 🔴\n`;
     } else {
       text += `• ${m.name}: Settled up ✨\n`;
     }
@@ -381,7 +412,7 @@ export function formatWhatsAppSummary(group, members, netBalances, simplifiedTra
     simplifiedTransactions.forEach((t) => {
       const fromName = memberMap[t.from]?.name || 'Someone';
       const toName = memberMap[t.to]?.name || 'Someone';
-      text += `👉 *${fromName}* pays *${toName}* ₹${t.amount.toLocaleString('en-IN')}\n`;
+      text += `👉 *${fromName}* pays *${toName}* ${formatCurrency(t.amount, groupCurrency)}\n`;
     });
   }
 
@@ -392,16 +423,34 @@ export function formatWhatsAppSummary(group, members, netBalances, simplifiedTra
 }
 
 /**
+ * Sanitize CSV cell against formula injection and quote properly
+ * If starting with =, +, -, @, \t, or \r, prefix with single quote '
+ */
+export function sanitizeCsvCell(value) {
+  let str = String(value ?? '');
+  // Prefix dangerous initial characters with single quote
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  // Escape double quotes
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+/**
  * Export expenses & settlements as CSV string
+ * Sanitizes formula injection and exports amounts from paise correctly
  */
 export function generateCSV(group, members) {
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m.name]));
+  const groupCurrency = group.currency || 'INR';
 
   const headers = ['Type', 'Date', 'Description', 'Category', 'Amount', 'Currency', 'Paid By', 'Split Method', 'Participants'];
   const rows = [];
 
   // Expenses
   (group.expenses || []).forEach((e) => {
+    const amountVal = e.amount_paise ? toRupees(e.amount_paise) : Number(e.amount || 0);
+
     const paidBy = e.isMultiPayer
       ? Object.entries(e.payers || {})
           .map(([id, amt]) => `${memberMap[id] || id}: ${amt}`)
@@ -413,54 +462,55 @@ export function generateCSV(group, members) {
       .join(', ');
 
     rows.push([
-      'Expense',
-      e.date || '',
-      `"${(e.description || '').replace(/"/g, '""')}"`,
-      e.category || 'General',
-      e.amount || 0,
-      e.currency || 'INR',
-      `"${paidBy}"`,
-      e.splitMethod || 'equal',
-      `"${participants}"`,
+      sanitizeCsvCell('Expense'),
+      sanitizeCsvCell(e.date || ''),
+      sanitizeCsvCell(e.description || ''),
+      sanitizeCsvCell(e.category || 'General'),
+      sanitizeCsvCell(amountVal.toFixed(2)),
+      sanitizeCsvCell(groupCurrency),
+      sanitizeCsvCell(paidBy),
+      sanitizeCsvCell(e.splitMethod || 'equal'),
+      sanitizeCsvCell(participants),
     ]);
   });
 
   // Settlements
   (group.settlements || []).forEach((s) => {
+    const amountVal = s.amount_paise ? toRupees(s.amount_paise) : Number(s.amount || 0);
+
     rows.push([
-      'Settlement',
-      s.date || '',
-      `"Payment from ${memberMap[s.from] || s.from} to ${memberMap[s.to] || s.to}"`,
-      'Settlement',
-      s.amount || 0,
-      'INR',
-      `"${memberMap[s.from] || s.from}"`,
-      'Direct',
-      `"${memberMap[s.to] || s.to}"`,
+      sanitizeCsvCell('Settlement'),
+      sanitizeCsvCell(s.date || ''),
+      sanitizeCsvCell(`Payment from ${memberMap[s.from] || s.from} to ${memberMap[s.to] || s.to}`),
+      sanitizeCsvCell('Settlement'),
+      sanitizeCsvCell(amountVal.toFixed(2)),
+      sanitizeCsvCell(groupCurrency),
+      sanitizeCsvCell(memberMap[s.from] || s.from),
+      sanitizeCsvCell('Direct'),
+      sanitizeCsvCell(memberMap[s.to] || s.to),
     ]);
   });
 
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  return [headers.map(sanitizeCsvCell).join(','), ...rows.map((r) => r.join(','))].join('\n');
 }
 
 /**
  * Unit Test / Sanity Check Suite
- * Run to guarantee calculation correctness.
  */
 export function runSanityChecks() {
   const results = [];
 
-  // 1. Equal Split Check with 100 / 3
-  const equalSplit = calculateSplits({
-    totalAmount: 100,
+  // 1. Equal Split Check with 0.05 / 3 (5 paise split 3 ways)
+  // Must distribute 2, 2, 1 paise deterministically -> sum = 5 paise (0.05)
+  const oddSplit = calculateSplits({
+    totalAmount: 0.05,
     splitMethod: 'equal',
     selectedMemberIds: ['m1', 'm2', 'm3'],
-    payerId: 'm1',
   });
-  const sumEqual = Object.values(equalSplit.owedPaise).reduce((a, b) => a + b, 0);
+  const sumOdd = Object.values(oddSplit.owedPaise).reduce((a, b) => a + b, 0);
   results.push({
-    test: 'Equal Split ₹100 among 3 participants retains all 10,000 paise',
-    passed: sumEqual === 10000 && equalSplit.owedPaise['m1'] === 3334 && equalSplit.owedPaise['m2'] === 3333,
+    test: 'Equal Split 0.05 (5 paise) split 3 ways yields 2, 2, 1 paise summing exactly to 5 paise',
+    passed: sumOdd === 5 && oddSplit.owedPaise['m1'] === 2 && oddSplit.owedPaise['m2'] === 2 && oddSplit.owedPaise['m3'] === 1,
   });
 
   // 2. Exact Amounts Check
@@ -469,7 +519,6 @@ export function runSanityChecks() {
     splitMethod: 'exact',
     selectedMemberIds: ['m1', 'm2'],
     exactValues: { m1: 150, m2: 100 },
-    payerId: 'm1',
   });
   results.push({
     test: 'Exact Split ₹250 (₹150 + ₹100) validates successfully',
@@ -482,19 +531,48 @@ export function runSanityChecks() {
     splitMethod: 'percentage',
     selectedMemberIds: ['m1', 'm2'],
     percentageValues: { m1: 60, m2: 40 },
-    payerId: 'm1',
   });
   results.push({
-    test: 'Percentage Split 60% / 40% on ₹500 produces ₹300 and ₹200',
+    test: 'Percentage Split 60% / 40% on ₹500 produces 30000 and 20000 paise',
     passed: pctSplit.isValid && pctSplit.owedPaise['m1'] === 30000 && pctSplit.owedPaise['m2'] === 20000,
   });
 
-  // 4. Greedy Debt Minimization
-  // Net: A owes 100, B owes 50, C gets back 150
+  // 4. Shares Split Check
+  const sharesSplit = calculateSplits({
+    totalAmount: 100,
+    splitMethod: 'shares',
+    selectedMemberIds: ['m1', 'm2'],
+    shareValues: { m1: 2, m2: 1 },
+  });
+  const sumShares = Object.values(sharesSplit.owedPaise).reduce((a, b) => a + b, 0);
+  results.push({
+    test: 'Shares Split 2 shares vs 1 share on ₹100 produces exact zero-loss sum (10000 paise)',
+    passed: sumShares === 10000 && sharesSplit.owedPaise['m1'] === 6667 && sharesSplit.owedPaise['m2'] === 3333,
+  });
+
+  // 5. Greedy Debt Minimization
   const simplified = simplifyDebts({ A: -100, B: -50, C: 150 });
   results.push({
     test: 'Simplify Debts: 2 debtors (100, 50) and 1 creditor (150) resolves in exactly 2 payments',
     passed: simplified.length === 2 && simplified.reduce((sum, t) => sum + t.amount, 0) === 150,
+  });
+
+  // 6. CSV Formula Injection escaping
+  const safeCell1 = sanitizeCsvCell('=1+1');
+  const safeCell2 = sanitizeCsvCell('-cmd|calc');
+  const safeCell3 = sanitizeCsvCell('Normal "Hello"');
+  results.push({
+    test: 'CSV injection protection prefixes =, -, +, @ with single quote and escapes quotes',
+    passed: safeCell1 === `"'=1+1"` && safeCell2 === `"'-cmd|calc"` && safeCell3 === `"Normal ""Hello"""`,
+  });
+
+  // 7. Amount validation cap
+  const capTest1 = validateAmount(10000000); // 1 crore
+  const capTest2 = validateAmount(10000000.01); // over cap
+  const capTest3 = validateAmount(10.555); // 3 decimals
+  results.push({
+    test: 'Amount cap enforces ₹1,00,00,000 maximum and at most 2 decimal places',
+    passed: capTest1.isValid && !capTest2.isValid && !capTest3.isValid,
   });
 
   return results;

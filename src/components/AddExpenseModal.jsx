@@ -1,21 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { CATEGORIES, AVATAR_COLORS } from '../utils/demoData';
+import { CATEGORIES } from '../utils/demoData';
 import {
   calculateSplits,
-  toPaise,
   toRupees,
   formatCurrency,
   CURRENCY_SYMBOLS,
+  validateAmount,
+  MAX_AMOUNT,
 } from '../utils/expenseLogic';
 import {
   X,
-  Plus,
-  Minus,
-  Check,
-  AlertCircle,
-  Sparkles,
-  Users,
   Wallet,
+  Users,
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
@@ -25,14 +21,13 @@ export default function AddExpenseModal({
   onSaveExpense,
   members = [],
   editingExpense = null,
-  activeGroupId,
+  groupCurrency = 'INR',
 }) {
   if (!isOpen) return null;
 
   // Form States
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('INR');
   const [category, setCategory] = useState('food');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
@@ -50,13 +45,13 @@ export default function AddExpenseModal({
   const [exactValues, setExactValues] = useState({});
   const [percentageValues, setPercentageValues] = useState({});
   const [shareValues, setShareValues] = useState({});
+  const [amountError, setAmountError] = useState('');
 
   // Initialize or populate if editing
   useEffect(() => {
     if (editingExpense) {
       setDescription(editingExpense.description || '');
       setAmount(editingExpense.amount ? String(editingExpense.amount) : '');
-      setCurrency(editingExpense.currency || 'INR');
       setCategory(editingExpense.category || 'food');
       setDate(editingExpense.date || new Date().toISOString().split('T')[0]);
       setNotes(editingExpense.notes || '');
@@ -86,7 +81,6 @@ export default function AddExpenseModal({
       // Default reset
       setDescription('');
       setAmount('');
-      setCurrency('INR');
       setCategory('food');
       setDate(new Date().toISOString().split('T')[0]);
       setNotes('');
@@ -116,7 +110,24 @@ export default function AddExpenseModal({
       });
       setMultiPayerAmounts(defaultMulti);
     }
+    setAmountError('');
   }, [editingExpense, isOpen]);
+
+  // Handle Amount validation
+  const handleAmountChange = (e) => {
+    const val = e.target.value;
+    setAmount(val);
+    if (val) {
+      const v = validateAmount(val);
+      if (!v.isValid) {
+        setAmountError(v.error);
+      } else {
+        setAmountError('');
+      }
+    } else {
+      setAmountError('');
+    }
+  };
 
   // Handle Multi-Payer Validation
   const totalAmountNum = Number(amount) || 0;
@@ -137,7 +148,6 @@ export default function AddExpenseModal({
     exactValues,
     percentageValues,
     shareValues,
-    payerId: isMultiPayer ? Object.keys(multiPayerAmounts)[0] : singlePayerId,
   });
 
   // Toggle member inclusion
@@ -159,14 +169,17 @@ export default function AddExpenseModal({
       alert('Please enter a description for this expense.');
       return;
     }
-    if (totalAmountNum <= 0) {
+
+    const valCheck = validateAmount(amount);
+    if (!valCheck.isValid) {
       sounds.playBuzzer();
-      alert('Please enter a valid amount greater than 0.');
+      setAmountError(valCheck.error);
       return;
     }
+
     if (!isPayerValid) {
       sounds.playBuzzer();
-      alert(`Multi-payer amounts must equal total ${formatCurrency(totalAmountNum, currency)}. Difference: ${formatCurrency(payerDifference, currency)}`);
+      alert(`Multi-payer amounts must equal total ${formatCurrency(totalAmountNum, groupCurrency)}. Difference: ${formatCurrency(payerDifference, groupCurrency)}`);
       return;
     }
     if (!splitResult.isValid) {
@@ -175,26 +188,37 @@ export default function AddExpenseModal({
       return;
     }
 
-    // Convert splits from paise to rupees
+    // Convert splits from paise to float
     const finalSplits = {};
     Object.entries(splitResult.owedPaise).forEach(([mId, paise]) => {
       finalSplits[mId] = toRupees(paise);
     });
 
     const expensePayload = {
-      id: editingExpense?.id || `exp_${Date.now()}`,
+      id: editingExpense?.id,
       description: description.trim(),
       amount: totalAmountNum,
-      currency,
+      amount_paise: Math.round(totalAmountNum * 100).toString(),
+      currency: groupCurrency,
       date,
       category,
       isMultiPayer,
       paidBy: isMultiPayer ? null : singlePayerId,
-      payers: isMultiPayer ? multiPayerAmounts : null,
-      splitMethod,
+      payers: isMultiPayer
+        ? Object.entries(multiPayerAmounts).map(([mId, amt]) => ({
+            member_id: mId,
+            amount_paise: Math.round(Number(amt) * 100).toString(),
+          }))
+        : [{ member_id: singlePayerId, amount_paise: Math.round(totalAmountNum * 100).toString() }],
+      splitMethod: splitMethod,
+      split_method: splitMethod,
       splitPercentages: splitMethod === 'percentage' ? percentageValues : null,
       splitShares: splitMethod === 'shares' ? shareValues : null,
-      splits: finalSplits,
+      splits: Object.entries(splitResult.owedPaise).map(([mId, paise]) => ({
+        member_id: mId,
+        amount_paise: paise.toString(),
+        share_value: splitMethod === 'shares' ? shareValues[mId] : splitMethod === 'percentage' ? percentageValues[mId] : null,
+      })),
       notes: notes.trim(),
     };
 
@@ -223,7 +247,7 @@ export default function AddExpenseModal({
               sounds.playPop();
               onClose();
             }}
-            className="p-1 border-2 border-black bg-white text-black hover:bg-black hover:text-white rounded brutal-btn"
+            className="p-1 border-2 border-black bg-white text-black hover:bg-black hover:text-white rounded brutal-btn min-h-[40px] min-w-[40px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
@@ -232,7 +256,7 @@ export default function AddExpenseModal({
         {/* Modal Body Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           
-          {/* Row 1: Description & Amount */}
+          {/* Row 1: Description & Amount (One currency per group) */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
             <div className="sm:col-span-7">
               <label className="block text-xs font-heading uppercase text-gray-700 dark:text-gray-300 mb-1">
@@ -244,46 +268,40 @@ export default function AddExpenseModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 required
-                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-sm font-bold font-body text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF2E93]"
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-sm font-bold font-body text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF2E93] min-h-[40px]"
               />
             </div>
 
-            <div className="sm:col-span-3">
-              <label className="block text-xs font-heading uppercase text-gray-700 dark:text-gray-300 mb-1">
-                Amount *
-              </label>
+            <div className="sm:col-span-5">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-heading uppercase text-gray-700 dark:text-gray-300">
+                  Amount ({CURRENCY_SYMBOLS[groupCurrency] || groupCurrency}) *
+                </label>
+                <span className="text-[10px] font-mono-numbers text-gray-400">
+                  Max: {formatCurrency(MAX_AMOUNT, groupCurrency)}
+                </span>
+              </div>
               <div className="relative">
-                <span className="absolute left-3 top-2 font-mono-numbers font-bold text-gray-500">
-                  {CURRENCY_SYMBOLS[currency] || '₹'}
+                <span className="absolute left-3 top-2.5 font-mono-numbers font-bold text-gray-500">
+                  {CURRENCY_SYMBOLS[groupCurrency] || groupCurrency}
                 </span>
                 <input
                   type="number"
                   step="0.01"
                   min="0.01"
+                  max={MAX_AMOUNT}
                   placeholder="0.00"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={handleAmountChange}
                   required
-                  className="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-sm font-mono-numbers font-extrabold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B6FF00]"
+                  className="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-sm font-mono-numbers font-extrabold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B6FF00] min-h-[40px]"
                 />
               </div>
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-heading uppercase text-gray-700 dark:text-gray-300 mb-1">
-                Currency
-              </label>
-              <select
-                aria-label="Select currency"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="w-full px-2 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none"
-              >
-                <option value="INR">₹ INR</option>
-                <option value="USD">$ USD</option>
-                <option value="EUR">€ EUR</option>
-                <option value="GBP">£ GBP</option>
-              </select>
+              {amountError && (
+                <div className="text-xs text-[#FF2E93] font-bold font-mono-numbers mt-1 animate-shake">
+                  🚨 {amountError}
+                </div>
+              )}
             </div>
           </div>
 
@@ -303,7 +321,7 @@ export default function AddExpenseModal({
                       sounds.playPop();
                       setCategory(cat.id);
                     }}
-                    className={`p-2 border-2 border-black rounded text-xs font-bold font-body flex items-center gap-2 transition-all ${
+                    className={`p-2 border-2 border-black rounded text-xs font-bold font-body flex items-center gap-2 transition-all min-h-[40px] ${
                       isSelected
                         ? 'bg-[#00F0FF] text-black brutal-shadow-sm -translate-y-0.5'
                         : 'bg-white dark:bg-[#202230] text-gray-700 dark:text-gray-300 hover:bg-gray-100'
@@ -327,7 +345,7 @@ export default function AddExpenseModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none"
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none min-h-[40px]"
               />
             </div>
 
@@ -337,10 +355,10 @@ export default function AddExpenseModal({
               </label>
               <input
                 type="text"
-                placeholder="e.g. Rahul used his Amex card"
+                placeholder="e.g. Paid using card"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-body text-black dark:text-white focus:outline-none"
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-body text-black dark:text-white focus:outline-none min-h-[40px]"
               />
             </div>
           </div>
@@ -358,7 +376,7 @@ export default function AddExpenseModal({
                   sounds.playPop();
                   setIsMultiPayer(!isMultiPayer);
                 }}
-                className="text-[11px] font-mono-numbers font-bold underline text-[#FF2E93] hover:text-[#e0207e]"
+                className="text-[11px] font-mono-numbers font-bold underline text-[#FF2E93] hover:text-[#e0207e] min-h-[40px] flex items-center"
               >
                 {isMultiPayer ? 'Switch to Single Payer' : 'Multiple People Paid?'}
               </button>
@@ -369,7 +387,7 @@ export default function AddExpenseModal({
                 aria-label="Select payer"
                 value={singlePayerId}
                 onChange={(e) => setSinglePayerId(e.target.value)}
-                className="w-full px-3 py-2 bg-white dark:bg-[#252838] border-2 border-black rounded text-sm font-bold text-black dark:text-white"
+                className="w-full px-3 py-2 bg-white dark:bg-[#252838] border-2 border-black rounded text-sm font-bold text-black dark:text-white min-h-[40px]"
               >
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -380,7 +398,7 @@ export default function AddExpenseModal({
             ) : (
               <div className="space-y-2 mt-2">
                 <div className="text-[11px] font-mono-numbers text-gray-500">
-                  Enter how much each person contributed (Total must equal {formatCurrency(totalAmountNum, currency)}):
+                  Enter how much each person contributed (Total must equal {formatCurrency(totalAmountNum, groupCurrency)}):
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {members.map((m) => (
@@ -399,7 +417,7 @@ export default function AddExpenseModal({
                             [m.id]: e.target.value,
                           })
                         }
-                        className="flex-1 px-2 py-1 bg-white dark:bg-[#252838] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
+                        className="flex-1 px-2 py-1.5 bg-white dark:bg-[#252838] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white min-h-[36px]"
                       />
                     </div>
                   ))}
@@ -407,15 +425,15 @@ export default function AddExpenseModal({
 
                 {/* Multi-payer validation alert */}
                 <div
-                  className={`text-xs font-mono-numbers font-bold p-1.5 border border-black rounded flex items-center justify-between ${
+                  className={`text-xs font-mono-numbers font-bold p-2 border border-black rounded flex items-center justify-between ${
                     isPayerValid ? 'bg-[#B6FF00] text-black' : 'bg-[#FF2E93] text-white'
                   }`}
                 >
-                  <span>Entered Sum: {formatCurrency(payerSum, currency)}</span>
+                  <span>Entered Sum: {formatCurrency(payerSum, groupCurrency)}</span>
                   <span>
                     {isPayerValid
                       ? '✓ Matches Total'
-                      : `Difference: ${formatCurrency(payerDifference, currency)}`}
+                      : `Difference: ${formatCurrency(payerDifference, groupCurrency)}`}
                   </span>
                 </div>
               </div>
@@ -439,7 +457,7 @@ export default function AddExpenseModal({
                       sounds.playPop();
                       setSplitMethod(m);
                     }}
-                    className={`px-2 py-1 rounded capitalize transition-all ${
+                    className={`px-3 py-1.5 rounded capitalize transition-all min-h-[36px] ${
                       splitMethod === m
                         ? 'bg-[#B6FF00] text-black border border-black'
                         : 'text-gray-600 dark:text-gray-300'
@@ -467,7 +485,7 @@ export default function AddExpenseModal({
                   return (
                     <div
                       key={m.id}
-                      className={`p-2 border-2 border-black rounded flex items-center justify-between gap-2 transition-all ${
+                      className={`p-2 border-2 border-black rounded flex items-center justify-between gap-2 transition-all min-h-[40px] ${
                         isIncluded
                           ? 'bg-white dark:bg-[#202230]'
                           : 'bg-gray-200 dark:bg-[#151620] opacity-50'
@@ -492,7 +510,7 @@ export default function AddExpenseModal({
                           {splitMethod === 'exact' && (
                             <div className="flex items-center gap-1">
                               <span className="text-xs font-mono-numbers text-gray-500">
-                                {CURRENCY_SYMBOLS[currency]}
+                                {CURRENCY_SYMBOLS[groupCurrency] || groupCurrency}
                               </span>
                               <input
                                 type="number"
@@ -502,7 +520,7 @@ export default function AddExpenseModal({
                                 onChange={(e) =>
                                   setExactValues({ ...exactValues, [m.id]: e.target.value })
                                 }
-                                className="w-24 px-2 py-0.5 bg-gray-50 dark:bg-[#252838] border border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
+                                className="w-24 px-2 py-1 bg-gray-50 dark:bg-[#252838] border border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
                               />
                             </div>
                           )}
@@ -517,7 +535,7 @@ export default function AddExpenseModal({
                                 onChange={(e) =>
                                   setPercentageValues({ ...percentageValues, [m.id]: e.target.value })
                                 }
-                                className="w-16 px-2 py-0.5 bg-gray-50 dark:bg-[#252838] border border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
+                                className="w-16 px-2 py-1 bg-gray-50 dark:bg-[#252838] border border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
                               />
                               <span className="text-xs font-mono-numbers font-bold dark:text-white">%</span>
                             </div>
@@ -534,7 +552,7 @@ export default function AddExpenseModal({
                                 onChange={(e) =>
                                   setShareValues({ ...shareValues, [m.id]: e.target.value })
                                 }
-                                className="w-14 px-2 py-0.5 bg-gray-50 dark:bg-[#252838] border border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
+                                className="w-14 px-2 py-1 bg-gray-50 dark:bg-[#252838] border border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
                               />
                               <span className="text-xs font-mono-numbers font-bold dark:text-white">shares</span>
                             </div>
@@ -542,7 +560,7 @@ export default function AddExpenseModal({
 
                           {/* Computed resulting share */}
                           <span className="font-mono-numbers text-xs font-extrabold text-[#FF2E93] min-w-[70px] text-right">
-                            {formatCurrency(computedShare, currency)}
+                            {formatCurrency(computedShare, groupCurrency)}
                           </span>
                         </div>
                       )}
@@ -553,7 +571,7 @@ export default function AddExpenseModal({
 
               {/* Math / Balance Status Indicator */}
               <div
-                className={`p-2 border-2 border-black rounded text-xs font-mono-numbers font-bold flex items-center justify-between mt-2 ${
+                className={`p-2.5 border-2 border-black rounded text-xs font-mono-numbers font-bold flex items-center justify-between mt-2 ${
                   splitResult.isValid
                     ? 'bg-[#B6FF00] text-black'
                     : 'bg-[#FF2E93] text-white animate-pulse'
@@ -561,8 +579,8 @@ export default function AddExpenseModal({
               >
                 <span>
                   {splitResult.isValid
-                    ? '✓ All Paise Accounted For (100% Zero-Loss)'
-                    : `Remaining to allocate: ${formatCurrency(toRupees(splitResult.remainingPaise), currency)}`}
+                    ? '✓ All Paise Distributed (100% Integer Precision)'
+                    : `Remaining to allocate: ${formatCurrency(toRupees(splitResult.remainingPaise), groupCurrency)}`}
                 </span>
                 {splitResult.error && (
                   <span className="text-[10px] font-normal underline">
@@ -581,16 +599,16 @@ export default function AddExpenseModal({
                 sounds.playPop();
                 onClose();
               }}
-              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-black dark:text-white font-heading text-xs border-2 border-black brutal-btn rounded"
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-black dark:text-white font-heading text-xs border-2 border-black brutal-btn rounded min-h-[40px]"
             >
               CANCEL
             </button>
 
             <button
               type="submit"
-              disabled={!splitResult.isValid || !isPayerValid}
-              className={`px-5 py-2 font-heading text-xs border-3 border-black brutal-shadow brutal-btn rounded uppercase transition-all ${
-                splitResult.isValid && isPayerValid
+              disabled={!splitResult.isValid || !isPayerValid || Boolean(amountError)}
+              className={`px-5 py-2 font-heading text-xs border-3 border-black brutal-shadow brutal-btn rounded uppercase transition-all min-h-[40px] ${
+                splitResult.isValid && isPayerValid && !amountError
                   ? 'bg-[#FFE600] text-black hover:bg-[#ffe01a]'
                   : 'bg-gray-400 text-gray-700 opacity-60 cursor-not-allowed'
               }`}

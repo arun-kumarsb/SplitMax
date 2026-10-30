@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { formatCurrency } from '../utils/expenseLogic';
-import { X, ArrowRight, Sparkles, CheckCircle2 } from 'lucide-react';
+import {
+  formatCurrency,
+  validateAmount,
+  MAX_AMOUNT,
+  CURRENCY_SYMBOLS,
+} from '../utils/expenseLogic';
+import { X, ArrowRight, Sparkles, AlertTriangle } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 export default function SettleUpModal({
   isOpen,
   onClose,
   members = [],
+  bilateralDebts = [],
+  groupCurrency = 'INR',
   onRecordSettlement,
   prefill = null, // { from, to, amount }
 }) {
@@ -18,6 +25,8 @@ export default function SettleUpModal({
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('UPI instant transfer');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [amountError, setAmountError] = useState('');
+  const [confirmOverSettle, setConfirmOverSettle] = useState(false);
 
   useEffect(() => {
     if (prefill) {
@@ -25,19 +34,53 @@ export default function SettleUpModal({
       if (prefill.to) setToMemberId(prefill.to);
       if (prefill.amount) setAmount(String(prefill.amount));
     }
+    setConfirmOverSettle(false);
+    setAmountError('');
   }, [prefill, isOpen]);
+
+  // Determine current bilateral debt between fromMember and toMember
+  const currentDebtRecord = bilateralDebts.find(
+    (d) => d.from === fromMemberId && d.to === toMemberId
+  );
+  const currentlyOwed = currentDebtRecord ? Number(currentDebtRecord.amount || 0) : 0;
+
+  const enteredAmountNum = Number(amount) || 0;
+  const isOverSettling = enteredAmountNum > currentlyOwed;
+
+  const handleAmountChange = (e) => {
+    const val = e.target.value;
+    setAmount(val);
+    if (val) {
+      const v = validateAmount(val);
+      if (!v.isValid) {
+        setAmountError(v.error);
+      } else {
+        setAmountError('');
+      }
+    } else {
+      setAmountError('');
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const val = Number(amount);
-    if (!val || val <= 0) {
+
+    const valCheck = validateAmount(amount);
+    if (!valCheck.isValid) {
       sounds.playBuzzer();
-      alert('Please enter a valid payment amount greater than zero.');
+      setAmountError(valCheck.error);
       return;
     }
+
     if (fromMemberId === toMemberId) {
       sounds.playBuzzer();
       alert('Sender and receiver cannot be the same person.');
+      return;
+    }
+
+    if (isOverSettling && !confirmOverSettle) {
+      sounds.playBuzzer();
+      alert('Please check the "Settle anyway" confirmation box to confirm payment exceeding the current balance.');
       return;
     }
 
@@ -53,10 +96,10 @@ export default function SettleUpModal({
     sounds.playSuccess();
 
     const settlementPayload = {
-      id: `stl_${Date.now()}`,
-      from: fromMemberId,
-      to: toMemberId,
-      amount: val,
+      from_member: fromMemberId,
+      to_member: toMemberId,
+      amount: enteredAmountNum,
+      amount_paise: Math.round(enteredAmountNum * 100).toString(),
       date,
       notes: notes.trim(),
     };
@@ -88,7 +131,7 @@ export default function SettleUpModal({
               sounds.playPop();
               onClose();
             }}
-            className="p-1 border-2 border-black bg-white text-black hover:bg-black hover:text-white rounded brutal-btn"
+            className="p-1 border-2 border-black bg-white text-black hover:bg-black hover:text-white rounded brutal-btn min-h-[40px] min-w-[40px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
@@ -141,7 +184,7 @@ export default function SettleUpModal({
                 aria-label="Who paid?"
                 value={fromMemberId}
                 onChange={(e) => setFromMemberId(e.target.value)}
-                className="w-full px-2 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-bold text-black dark:text-white"
+                className="w-full px-2 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-bold text-black dark:text-white min-h-[40px]"
               >
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -159,7 +202,7 @@ export default function SettleUpModal({
                 aria-label="Who received?"
                 value={toMemberId}
                 onChange={(e) => setToMemberId(e.target.value)}
-                className="w-full px-2 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-bold text-black dark:text-white"
+                className="w-full px-2 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-bold text-black dark:text-white min-h-[40px]"
               >
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -170,27 +213,71 @@ export default function SettleUpModal({
             </div>
           </div>
 
-          {/* Amount Input & Presets */}
+          {/* Current Debt Info */}
+          <div className="p-2 bg-blue-50 dark:bg-[#1c2238] border border-black rounded text-xs font-mono-numbers flex items-center justify-between">
+            <span className="text-gray-700 dark:text-gray-300">
+              Current amount owed by {fromMember?.name} to {toMember?.name}:
+            </span>
+            <span className="font-extrabold text-[#FF2E93]">
+              {formatCurrency(currentlyOwed, groupCurrency)}
+            </span>
+          </div>
+
+          {/* Amount Input */}
           <div>
-            <label className="block text-xs font-heading uppercase text-gray-700 dark:text-gray-300 mb-1">
-              Amount (₹) *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-heading uppercase text-gray-700 dark:text-gray-300">
+                Amount ({CURRENCY_SYMBOLS[groupCurrency] || groupCurrency}) *
+              </label>
+              <span className="text-[10px] font-mono-numbers text-gray-400">
+                Max: {formatCurrency(MAX_AMOUNT, groupCurrency)}
+              </span>
+            </div>
             <div className="relative">
               <span className="absolute left-3 top-2.5 font-mono-numbers font-bold text-gray-500">
-                ₹
+                {CURRENCY_SYMBOLS[groupCurrency] || groupCurrency}
               </span>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
+                max={MAX_AMOUNT}
                 placeholder="0.00"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={handleAmountChange}
                 required
-                className="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-base font-mono-numbers font-extrabold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B6FF00]"
+                className="w-full pl-8 pr-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-base font-mono-numbers font-extrabold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#B6FF00] min-h-[40px]"
               />
             </div>
+            {amountError && (
+              <div className="text-xs text-[#FF2E93] font-bold font-mono-numbers mt-1 animate-shake">
+                🚨 {amountError}
+              </div>
+            )}
           </div>
+
+          {/* Over-settling Warning & Explicit Confirmation Checkbox */}
+          {isOverSettling && enteredAmountNum > 0 && (
+            <div className="p-3 bg-yellow-100 dark:bg-[#352e18] border-2 border-black rounded-lg space-y-2 animate-in fade-in">
+              <div className="flex items-start gap-2 text-xs font-mono-numbers font-bold text-black dark:text-yellow-200">
+                <AlertTriangle className="w-4 h-4 text-[#FF7A00] shrink-0 mt-0.5" />
+                <span>
+                  Over-settle Alert: {fromMember?.name} only owes {toMember?.name}{' '}
+                  {formatCurrency(currentlyOwed, groupCurrency)}, but you are recording{' '}
+                  {formatCurrency(enteredAmountNum, groupCurrency)}.
+                </span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold font-mono-numbers text-black dark:text-white pt-1">
+                <input
+                  type="checkbox"
+                  checked={confirmOverSettle}
+                  onChange={(e) => setConfirmOverSettle(e.target.checked)}
+                  className="w-4 h-4 accent-[#FF7A00] cursor-pointer"
+                />
+                <span>Settle anyway (confirm over-settlement)</span>
+              </label>
+            </div>
+          )}
 
           {/* Date & Note */}
           <div className="grid grid-cols-2 gap-3">
@@ -202,7 +289,7 @@ export default function SettleUpModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white"
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white min-h-[40px]"
               />
             </div>
 
@@ -215,7 +302,7 @@ export default function SettleUpModal({
                 placeholder="GPay, Cash, UPI..."
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-body text-black dark:text-white"
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#202230] border-2 border-black rounded text-xs font-body text-black dark:text-white min-h-[40px]"
               />
             </div>
           </div>
@@ -228,14 +315,19 @@ export default function SettleUpModal({
                 sounds.playPop();
                 onClose();
               }}
-              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-black dark:text-white font-heading text-xs border-2 border-black brutal-btn rounded"
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-black dark:text-white font-heading text-xs border-2 border-black brutal-btn rounded min-h-[40px]"
             >
               CANCEL
             </button>
 
             <button
               type="submit"
-              className="px-5 py-2 bg-[#B6FF00] hover:bg-[#c6ff3b] text-black font-heading text-xs border-3 border-black brutal-shadow brutal-btn rounded uppercase flex items-center gap-1.5"
+              disabled={Boolean(amountError) || (isOverSettling && !confirmOverSettle)}
+              className={`px-5 py-2 font-heading text-xs border-3 border-black brutal-shadow brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px] ${
+                !amountError && (!isOverSettling || confirmOverSettle)
+                  ? 'bg-[#B6FF00] hover:bg-[#c6ff3b] text-black'
+                  : 'bg-gray-400 text-gray-700 opacity-60 cursor-not-allowed'
+              }`}
             >
               <Sparkles className="w-4 h-4" />
               <span>RECORD PAYMENT 🎉</span>

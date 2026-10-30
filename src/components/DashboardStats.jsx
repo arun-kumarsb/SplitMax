@@ -8,10 +8,11 @@ export default function DashboardStats({
   userNetBalance,
   currentMember,
   expenseCount,
+  groupCurrency = 'INR',
   onOpenSettle,
 }) {
-  const youOwe = userNetBalance < 0 ? Math.abs(userNetBalance) : 0;
-  const youGetBack = userNetBalance > 0 ? userNetBalance : 0;
+  const youOwe = userNetBalance < -0.005 ? Math.abs(userNetBalance) : 0;
+  const youGetBack = userNetBalance > 0.005 ? userNetBalance : 0;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
@@ -28,7 +29,7 @@ export default function DashboardStats({
           </span>
         </div>
         <div className="mt-3 font-mono-numbers text-3xl sm:text-4xl font-extrabold tracking-tight text-black">
-          {formatCurrency(totalGroupSpend)}
+          {formatCurrency(totalGroupSpend, groupCurrency)}
         </div>
         <div className="mt-2 text-xs font-bold font-handwriting text-black/75">
           Everything spent so far in this circle! 🍕
@@ -47,7 +48,7 @@ export default function DashboardStats({
           <span className="text-lg">{currentMember?.emoji || '⚡'}</span>
         </div>
         <div className="mt-3 font-mono-numbers text-3xl sm:text-4xl font-extrabold tracking-tight text-black">
-          {formatCurrency(userConsumedShare)}
+          {formatCurrency(userConsumedShare, groupCurrency)}
         </div>
         <div className="mt-2 text-xs font-bold font-handwriting text-black/75">
           {userConsumedShare > 0
@@ -78,18 +79,18 @@ export default function DashboardStats({
           )}
         </div>
         <div className="mt-3 font-mono-numbers text-3xl sm:text-4xl font-extrabold tracking-tight">
-          {formatCurrency(youOwe)}
+          {formatCurrency(youOwe, groupCurrency)}
         </div>
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-2 flex items-center justify-between flex-wrap gap-2">
           <p className="text-xs font-bold font-handwriting">
             {youOwe > 0
-              ? 'Rahul owes cash! Settle up before they call your mom. 🏃‍♂️'
+              ? 'Pay up before they send leg breakers! 🏃‍♂️'
               : 'Zero debts! Your conscience is spotless. 😇'}
           </p>
           {youOwe > 0 && (
             <button
               onClick={onOpenSettle}
-              className="bg-[#FFE600] text-black text-xs font-heading px-2.5 py-1 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase"
+              className="bg-[#FFE600] text-black text-xs font-heading px-3 py-2 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase min-h-[40px] flex items-center"
             >
               Settle
             </button>
@@ -119,9 +120,9 @@ export default function DashboardStats({
           )}
         </div>
         <div className="mt-3 font-mono-numbers text-3xl sm:text-4xl font-extrabold tracking-tight text-black dark:text-inherit">
-          {formatCurrency(youGetBack)}
+          {formatCurrency(youGetBack, groupCurrency)}
         </div>
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-2 flex items-center justify-between flex-wrap gap-2">
           <p className="text-xs font-bold font-handwriting text-black/80 dark:text-gray-300">
             {youGetBack > 0
               ? 'You sponsored the vibe. Time to harvest! 🌾'
@@ -130,7 +131,7 @@ export default function DashboardStats({
           {youGetBack > 0 && (
             <button
               onClick={onOpenSettle}
-              className="bg-black text-[#B6FF00] text-xs font-heading px-2.5 py-1 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase"
+              className="bg-black text-[#B6FF00] text-xs font-heading px-3 py-2 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase min-h-[40px] flex items-center"
             >
               Collect
             </button>

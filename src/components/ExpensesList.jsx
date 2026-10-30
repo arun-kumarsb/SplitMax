@@ -3,13 +3,9 @@ import { CATEGORIES } from '../utils/demoData';
 import { formatCurrency } from '../utils/expenseLogic';
 import {
   Search,
-  Filter,
-  ArrowUpDown,
   Edit2,
   Trash2,
   Calendar,
-  Receipt,
-  Tag,
   Users,
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
@@ -17,6 +13,7 @@ import { sounds } from '../utils/audio';
 export default function ExpensesList({
   expenses = [],
   members = [],
+  groupCurrency = 'INR',
   onEditExpense,
   onDeleteExpense,
   onOpenAddExpense,
@@ -67,7 +64,7 @@ export default function ExpensesList({
       {/* Title & Add Shortcut */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-black dark:border-gray-700 pb-3">
         <div className="flex items-center gap-2">
-          <span className="bg-[#FFE600] text-black font-display text-sm px-2.5 py-1 border-2 border-black brutal-shadow-sm -rotate-1">
+          <span className="bg-[#FFE600] text-black font-display text-sm px-2.5 py-1 border-2 border-black brutal-shadow-sm -rotate-1 min-h-[36px] flex items-center">
             FEED // LOG
           </span>
           <h2 className="font-heading text-lg sm:text-xl text-black dark:text-white">
@@ -83,7 +80,7 @@ export default function ExpensesList({
             sounds.playPop();
             onOpenAddExpense();
           }}
-          className="bg-[#B6FF00] hover:bg-[#c9ff42] text-black font-heading text-xs px-3 py-1.5 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5"
+          className="bg-[#B6FF00] hover:bg-[#c9ff42] text-black font-heading text-xs px-3.5 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px]"
         >
           <span>+ ADD EXPENSE</span>
         </button>
@@ -100,7 +97,7 @@ export default function ExpensesList({
               placeholder="Search expenses, hotels, crabs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-black rounded text-xs font-mono-numbers text-black dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFE600]"
+              className="w-full pl-9 pr-3 py-2.5 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-black rounded text-xs font-mono-numbers text-black dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FFE600] min-h-[40px]"
             />
           </div>
 
@@ -110,7 +107,7 @@ export default function ExpensesList({
               aria-label="Filter expenses by member"
               value={selectedMember}
               onChange={(e) => setSelectedMember(e.target.value)}
-              className="w-full py-2 px-3 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#00F0FF]"
+              className="w-full py-2.5 px-3 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#00F0FF] min-h-[40px]"
             >
               <option value="ALL">All Members Involved</option>
               {members.map((m) => (
@@ -127,7 +124,7 @@ export default function ExpensesList({
               aria-label="Sort expenses"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="w-full py-2 px-3 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF2E93]"
+              className="w-full py-2.5 px-3 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-black rounded text-xs font-mono-numbers font-bold text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-[#FF2E93] min-h-[40px]"
             >
               <option value="newest">📅 Newest First</option>
               <option value="oldest">📅 Oldest First</option>
@@ -138,14 +135,14 @@ export default function ExpensesList({
           </div>
         </div>
 
-        {/* Category Filter Chips */}
+        {/* Category Filter Chips (Min 40x40px tap target) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
           <button
             onClick={() => {
               sounds.playPop();
               setSelectedCategory('ALL');
             }}
-            className={`px-2.5 py-1 text-xs font-mono-numbers font-bold border-2 border-black rounded whitespace-nowrap transition-all ${
+            className={`px-3 py-2 text-xs font-mono-numbers font-bold border-2 border-black rounded whitespace-nowrap transition-all min-h-[40px] flex items-center ${
               selectedCategory === 'ALL'
                 ? 'bg-black text-[#FFE600] brutal-shadow-sm'
                 : 'bg-gray-100 dark:bg-[#202230] text-gray-700 dark:text-gray-300 hover:bg-gray-200'
@@ -164,7 +161,7 @@ export default function ExpensesList({
                   sounds.playPop();
                   setSelectedCategory(cat.id);
                 }}
-                className={`px-2.5 py-1 text-xs font-mono-numbers font-bold border-2 border-black rounded whitespace-nowrap flex items-center gap-1 transition-all ${
+                className={`px-3 py-2 text-xs font-mono-numbers font-bold border-2 border-black rounded whitespace-nowrap flex items-center gap-1.5 transition-all min-h-[40px] ${
                   isSelected
                     ? 'bg-[#FF2E93] text-white brutal-shadow-sm'
                     : 'bg-white dark:bg-[#202230] text-gray-700 dark:text-gray-300 hover:bg-yellow-50'
@@ -271,22 +268,22 @@ export default function ExpensesList({
                     </div>
                   </div>
 
-                  {/* Right: Amount & Action Buttons */}
+                  {/* Right: Amount & Action Buttons (Min 40x40px tap target) */}
                   <div className="flex flex-col items-end gap-2 ml-auto">
                     <div className="font-mono-numbers text-lg sm:text-xl font-extrabold text-black dark:text-white">
-                      {formatCurrency(exp.amount, exp.currency)}
+                      {formatCurrency(exp.amount, groupCurrency)}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
                           sounds.playPop();
                           onEditExpense(exp);
                         }}
                         title="Edit expense"
-                        className="p-1.5 bg-[#FFE600] text-black border border-black brutal-btn rounded text-xs hover:bg-[#ffd900]"
+                        className="p-2 bg-[#FFE600] text-black border-2 border-black brutal-btn rounded min-h-[40px] min-w-[40px] flex items-center justify-center hover:bg-[#ffd900]"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-4 h-4" />
                       </button>
 
                       <button
@@ -297,9 +294,9 @@ export default function ExpensesList({
                           }
                         }}
                         title="Delete expense"
-                        className="p-1.5 bg-[#FF2E93] text-white border border-black brutal-btn rounded text-xs hover:bg-[#e0207e]"
+                        className="p-2 bg-[#FF2E93] text-white border-2 border-black brutal-btn rounded min-h-[40px] min-w-[40px] flex items-center justify-center hover:bg-[#e0207e]"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -315,13 +312,13 @@ export default function ExpensesList({
                       return (
                         <span
                           key={memberId}
-                          title={`${member.name}: ${formatCurrency(share)}`}
+                          title={`${member.name}: ${formatCurrency(share, groupCurrency)}`}
                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-black text-[10px] font-bold"
                           style={{ backgroundColor: `${member.color}33` }}
                         >
                           <span>{member.emoji}</span>
-                          <span>{member.name.split(' ')[0]}</span>
-                          <span className="opacity-75">({formatCurrency(share)})</span>
+                          <span>{member.name?.split(' ')[0]}</span>
+                          <span className="opacity-75">({formatCurrency(share, groupCurrency)})</span>
                         </span>
                       );
                     })}

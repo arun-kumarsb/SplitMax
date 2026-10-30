@@ -11,22 +11,21 @@ import {
   Download,
   CheckCircle2,
   Sparkles,
-  HelpCircle,
-  Copy,
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 export default function BalancesSection({
   group,
-  members,
-  netBalances,
-  simplifiedDebts,
-  bilateralDebts,
+  members = [],
+  netBalances = {},
+  simplifiedDebts = [],
+  bilateralDebts = [],
   onOpenSettleWithPrefill,
 }) {
   const [useSimplified, setUseSimplified] = useState(true);
   const [copiedWhatsApp, setCopiedWhatsApp] = useState(false);
 
+  const groupCurrency = group?.currency || 'INR';
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
 
   const displayTransactions = useSimplified ? simplifiedDebts : bilateralDebts;
@@ -43,7 +42,7 @@ export default function BalancesSection({
     setTimeout(() => setCopiedWhatsApp(false), 2500);
   };
 
-  // CSV download handler
+  // CSV download handler (with formula injection protection & paise export)
   const handleDownloadCSV = () => {
     sounds.playSuccess();
     const csvContent = generateCSV(group, members);
@@ -62,7 +61,7 @@ export default function BalancesSection({
       {/* Top Banner & Export Buttons */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-black dark:border-gray-700 pb-3">
         <div className="flex items-center gap-2">
-          <span className="bg-[#B6FF00] text-black font-display text-sm px-2.5 py-1 border-2 border-black brutal-shadow-sm rotate-1">
+          <span className="bg-[#B6FF00] text-black font-display text-sm px-2.5 py-1 border-2 border-black brutal-shadow-sm rotate-1 min-h-[36px] flex items-center">
             DEBTS // BALANCES
           </span>
           <h2 className="font-heading text-lg sm:text-xl text-black dark:text-white">
@@ -70,21 +69,21 @@ export default function BalancesSection({
           </h2>
         </div>
 
-        {/* Action Buttons: WhatsApp & CSV */}
-        <div className="flex items-center gap-2">
+        {/* Action Buttons: WhatsApp & CSV (Min 40x40px tap target) */}
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleCopyWhatsApp}
-            className="bg-[#25D366] hover:bg-[#20ba59] text-black font-mono-numbers text-xs font-bold px-3 py-1.5 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5"
+            className="bg-[#25D366] hover:bg-[#20ba59] text-black font-mono-numbers text-xs font-bold px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px]"
             title="Copy formatted balance breakdown for WhatsApp"
           >
             {copiedWhatsApp ? (
               <>
-                <CheckCircle2 className="w-3.5 h-3.5" />
+                <CheckCircle2 className="w-4 h-4" />
                 <span>COPIED!</span>
               </>
             ) : (
               <>
-                <Share2 className="w-3.5 h-3.5" />
+                <Share2 className="w-4 h-4" />
                 <span>WHATSAPP SUMMARY</span>
               </>
             )}
@@ -92,10 +91,10 @@ export default function BalancesSection({
 
           <button
             onClick={handleDownloadCSV}
-            className="bg-[#FFE600] hover:bg-[#ffd900] text-black font-mono-numbers text-xs font-bold px-3 py-1.5 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5"
+            className="bg-[#FFE600] hover:bg-[#ffd900] text-black font-mono-numbers text-xs font-bold px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px]"
             title="Download all transactions as CSV"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-4 h-4" />
             <span className="hidden sm:inline">CSV EXPORT</span>
           </button>
         </div>
@@ -118,13 +117,13 @@ export default function BalancesSection({
           <div className="space-y-2">
             {members.map((member) => {
               const net = netBalances[member.id] || 0;
-              const isPositive = net > 0.05;
-              const isNegative = net < -0.05;
+              const isPositive = net > 0.005;
+              const isNegative = net < -0.005;
 
               return (
                 <div
                   key={member.id}
-                  className={`p-2.5 border-2 border-black rounded flex items-center justify-between transition-all ${
+                  className={`p-2.5 border-2 border-black rounded flex items-center justify-between transition-all min-h-[44px] ${
                     isPositive
                       ? 'bg-green-50 dark:bg-[#152718] border-green-900 dark:border-[#B6FF00]'
                       : isNegative
@@ -164,7 +163,7 @@ export default function BalancesSection({
                     }`}
                   >
                     {isPositive && '+'}
-                    {formatCurrency(net)}
+                    {formatCurrency(net, groupCurrency)}
                   </div>
                 </div>
               );
@@ -189,7 +188,7 @@ export default function BalancesSection({
                   sounds.playPop();
                   setUseSimplified(true);
                 }}
-                className={`px-2 py-1 text-xs font-mono-numbers font-bold rounded border ${
+                className={`px-3 py-1.5 text-xs font-mono-numbers font-bold rounded border min-h-[36px] flex items-center ${
                   useSimplified
                     ? 'bg-[#FF7A00] text-black border-black brutal-shadow-sm'
                     : 'border-transparent text-gray-500 dark:text-gray-400'
@@ -202,7 +201,7 @@ export default function BalancesSection({
                   sounds.playPop();
                   setUseSimplified(false);
                 }}
-                className={`px-2 py-1 text-xs font-mono-numbers font-bold rounded border ${
+                className={`px-3 py-1.5 text-xs font-mono-numbers font-bold rounded border min-h-[36px] flex items-center ${
                   !useSimplified
                     ? 'bg-[#00F0FF] text-black border-black brutal-shadow-sm'
                     : 'border-transparent text-gray-500 dark:text-gray-400'
@@ -250,23 +249,23 @@ export default function BalancesSection({
                   >
                     {/* Direction Flow */}
                     <div className="flex items-center gap-2 text-xs sm:text-sm font-bold">
-                      <span className="flex items-center gap-1 bg-[#FFE600] text-black px-2 py-0.5 border border-black rounded">
+                      <span className="flex items-center gap-1 bg-[#FFE600] text-black px-2 py-1 border border-black rounded min-h-[32px]">
                         <span>{fromMember.emoji}</span>
                         <span>{fromMember.name}</span>
                       </span>
 
                       <ArrowRight className="w-4 h-4 text-gray-400 animate-pulse" />
 
-                      <span className="flex items-center gap-1 bg-[#B6FF00] text-black px-2 py-0.5 border border-black rounded">
+                      <span className="flex items-center gap-1 bg-[#B6FF00] text-black px-2 py-1 border border-black rounded min-h-[32px]">
                         <span>{toMember.emoji}</span>
                         <span>{toMember.name}</span>
                       </span>
                     </div>
 
-                    {/* Amount & Settle Button */}
+                    {/* Amount & Settle Button (Min 40x40px tap target) */}
                     <div className="flex items-center gap-2">
                       <span className="font-mono-numbers text-sm sm:text-base font-extrabold text-[#FF2E93]">
-                        {formatCurrency(tx.amount)}
+                        {formatCurrency(tx.amount, groupCurrency)}
                       </span>
 
                       <button
@@ -278,7 +277,7 @@ export default function BalancesSection({
                             amount: tx.amount,
                           });
                         }}
-                        className="bg-[#00F0FF] hover:bg-[#43f3ff] text-black font-heading text-[11px] px-2.5 py-1 border-2 border-black brutal-btn brutal-shadow-sm rounded uppercase"
+                        className="bg-[#00F0FF] hover:bg-[#43f3ff] text-black font-heading text-[11px] px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded uppercase min-h-[40px] flex items-center"
                       >
                         Settle Up
                       </button>

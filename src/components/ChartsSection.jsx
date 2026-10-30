@@ -9,6 +9,7 @@ export default function ChartsSection({ group, members }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredSlice, setHoveredSlice] = useState(null);
 
+  const groupCurrency = group?.currency || 'INR';
   const expenses = group?.expenses || [];
   const totalSpend = expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
 
@@ -93,7 +94,7 @@ export default function ChartsSection({ group, members }) {
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-black dark:border-gray-700 pb-3">
         <div className="flex items-center gap-2">
-          <span className="bg-[#FF2E93] text-black font-display text-sm px-2.5 py-1 border-2 border-black brutal-shadow-sm -rotate-1">
+          <span className="bg-[#FF2E93] text-black font-display text-sm px-2.5 py-1 border-2 border-black brutal-shadow-sm -rotate-1 min-h-[36px] flex items-center">
             CHARTS // DATA
           </span>
           <h2 className="font-heading text-lg sm:text-xl text-black dark:text-white">
@@ -101,7 +102,7 @@ export default function ChartsSection({ group, members }) {
           </h2>
         </div>
 
-        {/* Tab Controls & Collapse */}
+        {/* Tab Controls & Collapse (Min 40x40px) */}
         <div className="flex items-center gap-2">
           <div className="flex bg-[#F3F4F6] dark:bg-[#202230] border-2 border-black p-0.5 rounded">
             <button
@@ -109,13 +110,13 @@ export default function ChartsSection({ group, members }) {
                 sounds.playPop();
                 setActiveTab('category');
               }}
-              className={`px-2.5 py-1 text-xs font-mono-numbers font-bold rounded flex items-center gap-1 transition-all ${
+              className={`px-3 py-2 text-xs font-mono-numbers font-bold rounded flex items-center gap-1.5 transition-all min-h-[40px] ${
                 activeTab === 'category'
                   ? 'bg-[#FFE600] text-black border-2 border-black brutal-shadow-sm'
                   : 'text-gray-600 dark:text-gray-300'
               }`}
             >
-              <PieChart className="w-3.5 h-3.5" />
+              <PieChart className="w-4 h-4" />
               <span className="hidden sm:inline">Category</span>
             </button>
 
@@ -124,13 +125,13 @@ export default function ChartsSection({ group, members }) {
                 sounds.playPop();
                 setActiveTab('time');
               }}
-              className={`px-2.5 py-1 text-xs font-mono-numbers font-bold rounded flex items-center gap-1 transition-all ${
+              className={`px-3 py-2 text-xs font-mono-numbers font-bold rounded flex items-center gap-1.5 transition-all min-h-[40px] ${
                 activeTab === 'time'
                   ? 'bg-[#00F0FF] text-black border-2 border-black brutal-shadow-sm'
                   : 'text-gray-600 dark:text-gray-300'
               }`}
             >
-              <BarChart3 className="w-3.5 h-3.5" />
+              <BarChart3 className="w-4 h-4" />
               <span className="hidden sm:inline">Timeline</span>
             </button>
 
@@ -139,20 +140,20 @@ export default function ChartsSection({ group, members }) {
                 sounds.playPop();
                 setActiveTab('members');
               }}
-              className={`px-2.5 py-1 text-xs font-mono-numbers font-bold rounded flex items-center gap-1 transition-all ${
+              className={`px-3 py-2 text-xs font-mono-numbers font-bold rounded flex items-center gap-1.5 transition-all min-h-[40px] ${
                 activeTab === 'members'
                   ? 'bg-[#B6FF00] text-black border-2 border-black brutal-shadow-sm'
                   : 'text-gray-600 dark:text-gray-300'
               }`}
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Members</span>
             </button>
           </div>
 
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="p-1.5 border-2 border-black bg-[#FFE600] text-black rounded brutal-shadow-sm brutal-btn"
+            className="p-2 border-2 border-black bg-[#FFE600] text-black rounded brutal-shadow-sm brutal-btn min-h-[40px] min-w-[40px] flex items-center justify-center"
             title={collapsed ? 'Expand Charts' : 'Collapse Charts'}
           >
             {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
@@ -174,7 +175,7 @@ export default function ChartsSection({ group, members }) {
                   {/* SVG Donut */}
                   <div className="relative flex justify-center items-center py-4">
                     <svg viewBox="0 0 200 200" className="w-52 h-52 sm:w-60 sm:h-60 transform -rotate-90">
-                      {donutSegments.map((seg, idx) => {
+                      {donutSegments.map((seg) => {
                         const radius = 70;
                         const circumference = 2 * Math.PI * radius;
                         const strokeDasharray = `${(seg.fraction * circumference)} ${circumference}`;
@@ -208,8 +209,8 @@ export default function ChartsSection({ group, members }) {
                       </span>
                       <span className="font-mono-numbers text-base sm:text-lg font-bold text-black dark:text-white">
                         {hoveredSlice
-                          ? formatCurrency(categoryData.find((c) => c.id === hoveredSlice)?.total)
-                          : formatCurrency(totalSpend)}
+                          ? formatCurrency(categoryData.find((c) => c.id === hoveredSlice)?.total, groupCurrency)
+                          : formatCurrency(totalSpend, groupCurrency)}
                       </span>
                       <span className="text-[11px] font-bold font-mono-numbers text-[#FF2E93]">
                         {hoveredSlice
@@ -238,7 +239,7 @@ export default function ChartsSection({ group, members }) {
                             <span className="font-heading">{seg.name}</span>
                           </span>
                           <span className="font-mono-numbers">
-                            {formatCurrency(seg.total)}{' '}
+                            {formatCurrency(seg.total, groupCurrency)}{' '}
                             <span className="text-[10px] text-gray-500 font-normal">
                               ({seg.percentage}%)
                             </span>
@@ -273,7 +274,7 @@ export default function ChartsSection({ group, members }) {
                         >
                           {/* Tooltip on hover */}
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-8 bg-black text-[#FFE600] font-mono-numbers text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap z-10 border border-[#FFE600]">
-                            {formatCurrency(item.amount)}
+                            {formatCurrency(item.amount, groupCurrency)}
                           </div>
 
                           <div className="w-full flex justify-center h-40 items-end">
@@ -322,7 +323,7 @@ export default function ChartsSection({ group, members }) {
                           <div className="flex items-center justify-between text-xs font-bold mb-2">
                             <span className="flex items-center gap-2">
                               <span
-                                className="w-6 h-6 rounded-full border-2 border-black flex items-center justify-center text-xs"
+                                className="w-7 h-7 rounded-full border-2 border-black flex items-center justify-center text-xs"
                                 style={{ backgroundColor: m.member.color }}
                               >
                                 {m.member.emoji}
@@ -330,7 +331,7 @@ export default function ChartsSection({ group, members }) {
                               <span className="font-heading">{m.member.name}</span>
                             </span>
                             <span className="font-mono-numbers text-[11px]">
-                              Paid: <strong className="text-green-600 dark:text-[#B6FF00]">{formatCurrency(m.paid)}</strong> | Owed: <strong className="text-pink-600 dark:text-[#FF2E93]">{formatCurrency(m.owed)}</strong>
+                              Paid: <strong className="text-green-600 dark:text-[#B6FF00]">{formatCurrency(m.paid, groupCurrency)}</strong> | Owed: <strong className="text-pink-600 dark:text-[#FF2E93]">{formatCurrency(m.owed, groupCurrency)}</strong>
                             </span>
                           </div>
 
