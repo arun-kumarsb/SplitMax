@@ -17,6 +17,10 @@ standalone.html
 !.env.example
 .neon
 
+# Keys & Secrets
+*.pem
+*.key
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

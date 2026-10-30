@@ -19,10 +19,30 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Whitelisted origins for production & development
+const ALLOWED_ORIGINS = [
+  'https://staging.d9ka6i95asekj.amplifyapp.com',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://3.106.141.172:3001',
+];
+
 // CORS setup for dev and production
 app.use(
   cors({
-    origin: true, // Allow frontend origin
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, mobile, server-side fetch)
+      if (!origin) return callback(null, true);
+      if (
+        ALLOWED_ORIGINS.includes(origin) ||
+        origin.endsWith('.amplifyapp.com') ||
+        process.env.NODE_ENV !== 'production'
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true); // Permissive fallback
+    },
     credentials: true,
   })
 );
@@ -102,7 +122,7 @@ app.post('/api/auth/register', async (req, res) => {
     const token = signToken(user);
     setAuthCookie(res, token);
 
-    res.status(201).json({ user });
+    res.status(201).json({ user, token });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ error: 'Internal server error during registration.' });
@@ -137,7 +157,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const token = signToken(safeUser);
     setAuthCookie(res, token);
 
-    res.json({ user: safeUser });
+    res.json({ user: safeUser, token });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Internal server error during login.' });
