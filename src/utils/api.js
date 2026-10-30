@@ -4,7 +4,9 @@
 // Backend EC2 IP & Port Configuration
 export const BACKEND_IP = '3.106.141.172';
 export const BACKEND_PORT = '3001';
+export const BACKEND_DOMAIN = `${BACKEND_IP}.sslip.io`;
 export const BACKEND_URL = `http://${BACKEND_IP}:${BACKEND_PORT}`;
+export const BACKEND_HTTPS_URL = `https://${BACKEND_DOMAIN}`;
 
 // Determine base API endpoint:
 // 1. If explicitly set via environment or window override, use it.

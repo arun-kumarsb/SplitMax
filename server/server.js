@@ -26,6 +26,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://3.106.141.172:3001',
+  'https://3.106.141.172.sslip.io',
+  'http://3.106.141.172.sslip.io',
 ];
 
 // CORS setup for dev and production
