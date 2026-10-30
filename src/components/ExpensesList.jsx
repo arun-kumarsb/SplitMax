@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CATEGORIES } from '../utils/demoData';
+import { CATEGORIES } from '../utils/constants';
 import { formatCurrency } from '../utils/expenseLogic';
 import {
   Search,
@@ -178,7 +178,26 @@ export default function ExpensesList({
 
       {/* Expenses Cards List */}
       <div className="mt-5 space-y-3">
-        {sortedExpenses.length === 0 ? (
+        {expenses.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 dark:bg-[#1A1C28] border-3 border-dashed border-black dark:border-gray-700 rounded-lg p-6 space-y-3">
+            <div className="text-5xl animate-bounce">🍕</div>
+            <div className="font-heading text-lg text-black dark:text-white">
+              NO EXPENSES RECORDED YET!
+            </div>
+            <p className="text-xs font-mono-numbers text-gray-500 max-w-sm mx-auto">
+              Nothing has been spent in this group yet. Add the first dinner, taxi, or grocery bill to get started!
+            </p>
+            <button
+              onClick={() => {
+                sounds.playPop();
+                onOpenAddExpense();
+              }}
+              className="bg-[#FFE600] hover:bg-[#ffd900] text-black font-heading text-xs px-5 py-2.5 border-3 border-black brutal-shadow brutal-btn rounded uppercase min-h-[40px] inline-flex items-center gap-2"
+            >
+              <span>+ ADD THE FIRST EXPENSE</span>
+            </button>
+          </div>
+        ) : sortedExpenses.length === 0 ? (
           <div className="text-center py-12 bg-gray-50 dark:bg-[#1A1C28] border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg">
             <div className="text-4xl mb-2">🕵️‍♂️</div>
             <div className="font-heading text-base text-black dark:text-white">

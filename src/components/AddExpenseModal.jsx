@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CATEGORIES } from '../utils/demoData';
+import { CATEGORIES } from '../utils/constants';
 import {
   calculateSplits,
   toRupees,
@@ -23,13 +23,11 @@ export default function AddExpenseModal({
   editingExpense = null,
   groupCurrency = 'INR',
 }) {
-  if (!isOpen) return null;
-
   // Form States
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('food');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
 
   // Payer States: single vs multi
@@ -49,6 +47,7 @@ export default function AddExpenseModal({
 
   // Initialize or populate if editing
   useEffect(() => {
+    if (!isOpen) return;
     if (editingExpense) {
       setDescription(editingExpense.description || '');
       setAmount(editingExpense.amount ? String(editingExpense.amount) : '');
@@ -112,6 +111,8 @@ export default function AddExpenseModal({
     }
     setAmountError('');
   }, [editingExpense, isOpen]);
+
+  if (!isOpen) return null;
 
   // Handle Amount validation
   const handleAmountChange = (e) => {

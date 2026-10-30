@@ -138,9 +138,4 @@ export const api = {
       body: JSON.stringify({ groups, members }),
     });
   },
-
-  // Load Demo Group
-  async loadDemoGroup() {
-    return fetchJson('/load-demo', { method: 'POST' });
-  },
 };

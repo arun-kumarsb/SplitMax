@@ -2,12 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   calculateSplits,
   simplifyDebts,
-  calculateNetBalances,
-  calculateBilateralDebts,
   sanitizeCsvCell,
   validateAmount,
-  toPaise,
-  toRupees,
 } from '../src/utils/expenseLogic.js';
 
 describe('Split Methods & Paise Rounding Math', () => {

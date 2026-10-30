@@ -6,7 +6,6 @@ import {
   Sun,
   Users,
   Plus,
-  Sparkles,
   History,
   LogOut,
   LogIn,
@@ -30,7 +29,6 @@ export default function Header({
   isMuted,
   onToggleMute,
   onOpenActivity,
-  onLoadDemoGroup,
   onImportLocalData,
   hasLocalData = false,
 }) {
@@ -125,21 +123,6 @@ export default function Header({
                 <span className="hidden sm:inline">IMPORT</span>
               </button>
             )}
-
-            {/* Load Demo Group Button */}
-            <button
-              onClick={() => {
-                if (window.confirm('Load standard demo group into your account?')) {
-                  sounds.playSuccess();
-                  onLoadDemoGroup();
-                }
-              }}
-              title="Load demo group with sample expenses"
-              className="bg-[#B6FF00] hover:bg-[#c9ff40] text-black px-2.5 py-1.5 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1 text-xs font-bold font-mono-numbers min-h-[40px] min-w-[40px]"
-            >
-              <Sparkles className="w-4 h-4 text-black" />
-              <span className="hidden sm:inline">DEMO</span>
-            </button>
 
             {/* Activity Log Button */}
             <button

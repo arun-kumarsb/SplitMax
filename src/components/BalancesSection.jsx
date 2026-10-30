@@ -28,6 +28,7 @@ export default function BalancesSection({
   const groupCurrency = group?.currency || 'INR';
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
 
+  const hasData = (group?.expenses?.length || 0) > 0 || (group?.settlements?.length || 0) > 0;
   const displayTransactions = useSimplified ? simplifiedDebts : bilateralDebts;
   const rawTxCount = bilateralDebts.length;
   const simpTxCount = simplifiedDebts.length;
@@ -35,6 +36,11 @@ export default function BalancesSection({
 
   // WhatsApp copy handler
   const handleCopyWhatsApp = () => {
+    if (!hasData) {
+      sounds.playBuzzer();
+      alert('No expenses or balances recorded yet in this group to export.');
+      return;
+    }
     sounds.playSuccess();
     const summary = formatWhatsAppSummary(group, members, netBalances, simplifiedDebts);
     navigator.clipboard.writeText(summary);
@@ -42,15 +48,20 @@ export default function BalancesSection({
     setTimeout(() => setCopiedWhatsApp(false), 2500);
   };
 
-  // CSV download handler (with formula injection protection & paise export)
+  // CSV download handler
   const handleDownloadCSV = () => {
+    if (!hasData) {
+      sounds.playBuzzer();
+      alert('No expenses or settlements to export yet.');
+      return;
+    }
     sounds.playSuccess();
     const csvContent = generateCSV(group, members);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${group.name.replace(/[^a-zA-Z0-9]/g, '_')}_expenses.csv`);
+    link.setAttribute('download', `${(group?.name || 'group').replace(/[^a-zA-Z0-9]/g, '_')}_expenses.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -73,8 +84,13 @@ export default function BalancesSection({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleCopyWhatsApp}
-            className="bg-[#25D366] hover:bg-[#20ba59] text-black font-mono-numbers text-xs font-bold px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px]"
-            title="Copy formatted balance breakdown for WhatsApp"
+            disabled={!hasData}
+            className={`font-mono-numbers text-xs font-bold px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px] ${
+              hasData
+                ? 'bg-[#25D366] hover:bg-[#20ba59] text-black'
+                : 'bg-gray-200 dark:bg-gray-800 text-gray-500 cursor-not-allowed opacity-60'
+            }`}
+            title={hasData ? 'Copy formatted balance breakdown for WhatsApp' : 'No balances to export yet'}
           >
             {copiedWhatsApp ? (
               <>
@@ -91,8 +107,13 @@ export default function BalancesSection({
 
           <button
             onClick={handleDownloadCSV}
-            className="bg-[#FFE600] hover:bg-[#ffd900] text-black font-mono-numbers text-xs font-bold px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px]"
-            title="Download all transactions as CSV"
+            disabled={!hasData}
+            className={`font-mono-numbers text-xs font-bold px-3 py-2 border-2 border-black brutal-btn brutal-shadow-sm rounded flex items-center gap-1.5 min-h-[40px] ${
+              hasData
+                ? 'bg-[#FFE600] hover:bg-[#ffd900] text-black'
+                : 'bg-gray-200 dark:bg-gray-800 text-gray-500 cursor-not-allowed opacity-60'
+            }`}
+            title={hasData ? 'Download all transactions as CSV' : 'No expenses to export yet'}
           >
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">CSV EXPORT</span>
@@ -115,59 +136,65 @@ export default function BalancesSection({
           </div>
 
           <div className="space-y-2">
-            {members.map((member) => {
-              const net = netBalances[member.id] || 0;
-              const isPositive = net > 0.005;
-              const isNegative = net < -0.005;
+            {members.length === 0 ? (
+              <div className="p-4 bg-gray-50 dark:bg-[#1E1F2A] border-2 border-dashed border-gray-300 dark:border-gray-700 rounded text-center text-xs font-mono-numbers text-gray-500">
+                No members in this group yet. Add members to see running totals.
+              </div>
+            ) : (
+              members.map((member) => {
+                const net = netBalances[member.id] || 0;
+                const isPositive = net > 0.005;
+                const isNegative = net < -0.005;
 
-              return (
-                <div
-                  key={member.id}
-                  className={`p-2.5 border-2 border-black rounded flex items-center justify-between transition-all min-h-[44px] ${
-                    isPositive
-                      ? 'bg-green-50 dark:bg-[#152718] border-green-900 dark:border-[#B6FF00]'
-                      : isNegative
-                      ? 'bg-red-50 dark:bg-[#2e151d] border-red-900 dark:border-[#FF2E93]'
-                      : 'bg-gray-50 dark:bg-[#1E1F2A]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-8 h-8 rounded-full border-2 border-black flex items-center justify-center text-sm font-bold shadow-sm"
-                      style={{ backgroundColor: member.color || '#FFE600' }}
-                    >
-                      {member.emoji}
-                    </div>
-                    <div>
-                      <div className="font-heading text-xs sm:text-sm text-black dark:text-white">
-                        {member.name}
-                      </div>
-                      <div className="text-[10px] font-mono-numbers text-gray-500 dark:text-gray-400">
-                        {isPositive
-                          ? 'gets back'
-                          : isNegative
-                          ? 'owes group'
-                          : 'fully settled'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Net Badge */}
+                return (
                   <div
-                    className={`font-mono-numbers text-sm sm:text-base font-extrabold px-2 py-0.5 border border-black rounded ${
+                    key={member.id}
+                    className={`p-2.5 border-2 border-black rounded flex items-center justify-between transition-all min-h-[44px] ${
                       isPositive
-                        ? 'bg-[#B6FF00] text-black'
+                        ? 'bg-green-50 dark:bg-[#152718] border-green-900 dark:border-[#B6FF00]'
                         : isNegative
-                        ? 'bg-[#FF2E93] text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                        ? 'bg-red-50 dark:bg-[#2e151d] border-red-900 dark:border-[#FF2E93]'
+                        : 'bg-gray-50 dark:bg-[#1E1F2A]'
                     }`}
                   >
-                    {isPositive && '+'}
-                    {formatCurrency(net, groupCurrency)}
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="w-8 h-8 rounded-full border-2 border-black flex items-center justify-center text-sm font-bold shadow-sm"
+                        style={{ backgroundColor: member.color || '#FFE600' }}
+                      >
+                        {member.emoji}
+                      </div>
+                      <div>
+                        <div className="font-heading text-xs sm:text-sm text-black dark:text-white">
+                          {member.name}
+                        </div>
+                        <div className="text-[10px] font-mono-numbers text-gray-500 dark:text-gray-400">
+                          {isPositive
+                            ? 'gets back'
+                            : isNegative
+                            ? 'owes group'
+                            : 'fully settled'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Net Badge */}
+                    <div
+                      className={`font-mono-numbers text-sm sm:text-base font-extrabold px-2 py-0.5 border border-black rounded ${
+                        isPositive
+                          ? 'bg-[#B6FF00] text-black'
+                          : isNegative
+                          ? 'bg-[#FF2E93] text-white'
+                          : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      {isPositive && '+'}
+                      {formatCurrency(net, groupCurrency)}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -233,7 +260,9 @@ export default function BalancesSection({
                 ALL SETTLED! ABSOLUTE LEGENDS.
               </div>
               <div className="text-xs font-mono-numbers text-gray-500">
-                No outstanding payments needed in this circle.
+                {hasData
+                  ? 'No outstanding payments needed in this circle.'
+                  : 'Add expenses to see who owes whom and simplify debts.'}
               </div>
             </div>
           ) : (

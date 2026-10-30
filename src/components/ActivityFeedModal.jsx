@@ -82,8 +82,14 @@ export default function ActivityFeedModal({
         {/* Feed List */}
         <div className="p-4 sm:p-6 max-h-[65vh] overflow-y-auto space-y-3">
           {sortedActivities.length === 0 ? (
-            <div className="py-12 text-center text-gray-400 font-mono-numbers">
-              No recent activity recorded.
+            <div className="py-12 text-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-6 bg-[#FAF9F5] dark:bg-[#12131C]">
+              <span className="text-4xl mb-2 block animate-pulse">📜</span>
+              <p className="font-heading text-sm text-black dark:text-white uppercase tracking-wider">
+                No activity logged yet!
+              </p>
+              <p className="font-handwriting text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Expenses, edits, deletions and settlements will be tracked here in real-time.
+              </p>
             </div>
           ) : (
             sortedActivities.map((act, idx) => {
@@ -106,15 +112,15 @@ export default function ActivityFeedModal({
                 badgeColor = 'bg-[#00F0FF]';
               }
 
-              const ts = act.timestamp || act.created_at || Date.now();
-              const formattedTime = new Date(ts).toLocaleTimeString([], {
+              const ts = act.timestamp || act.created_at || 0;
+              const formattedTime = ts ? new Date(ts).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
-              });
-              const formattedDate = new Date(ts).toLocaleDateString([], {
+              }) : 'Just now';
+              const formattedDate = ts ? new Date(ts).toLocaleDateString([], {
                 month: 'short',
                 day: 'numeric',
-              });
+              }) : 'Today';
 
               return (
                 <div

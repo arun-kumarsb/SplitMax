@@ -18,17 +18,16 @@ export default function SettleUpModal({
   onRecordSettlement,
   prefill = null, // { from, to, amount }
 }) {
-  if (!isOpen) return null;
-
   const [fromMemberId, setFromMemberId] = useState(members[0]?.id || '');
   const [toMemberId, setToMemberId] = useState(members[1]?.id || members[0]?.id || '');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('UPI instant transfer');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [amountError, setAmountError] = useState('');
   const [confirmOverSettle, setConfirmOverSettle] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return;
     if (prefill) {
       if (prefill.from) setFromMemberId(prefill.from);
       if (prefill.to) setToMemberId(prefill.to);
@@ -37,6 +36,8 @@ export default function SettleUpModal({
     setConfirmOverSettle(false);
     setAmountError('');
   }, [prefill, isOpen]);
+
+  if (!isOpen) return null;
 
   // Determine current bilateral debt between fromMember and toMember
   const currentDebtRecord = bilateralDebts.find(

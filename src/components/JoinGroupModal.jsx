@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserCheck, Key, ArrowRight } from 'lucide-react';
+import { X, Key, UserCheck } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 export default function JoinGroupModal({
@@ -8,11 +8,11 @@ export default function JoinGroupModal({
   onJoinSuccess,
   api,
 }) {
-  if (!isOpen) return null;
-
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();

@@ -1,9 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  INITIAL_GROUPS,
-  INITIAL_MEMBERS,
-  INITIAL_ACTIVITY,
-} from './utils/demoData';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   calculateNetBalances,
   simplifyDebts,
@@ -43,7 +38,7 @@ export default function App() {
 
   // 2. User & Auth State
   const [currentUser, setCurrentUser] = useState(null);
-  const [authChecking, setAuthChecking] = useState(true);
+  const [_authChecking, setAuthChecking] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
@@ -51,32 +46,38 @@ export default function App() {
   const [groups, setGroups] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_GROUPS);
-      return saved ? JSON.parse(saved) : INITIAL_GROUPS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_GROUPS;
+      return [];
     }
   });
 
   const [members, setMembers] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_MEMBERS);
-      return saved ? JSON.parse(saved) : INITIAL_MEMBERS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_MEMBERS;
+      return [];
     }
   });
 
   const [activities, setActivities] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ACTIVITY);
-      return saved ? JSON.parse(saved) : INITIAL_ACTIVITY;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_ACTIVITY;
+      return [];
     }
   });
 
   const [activeGroupId, setActiveGroupId] = useState(() => {
-    return groups[0]?.id || 'grp_goa';
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_GROUPS);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return parsed[0]?.id || null;
+    } catch {
+      return null;
+    }
   });
 
   const [isDark, setIsDark] = useState(() => {
@@ -155,7 +156,7 @@ export default function App() {
     if (currentUser) {
       fetchUserGroups();
     }
-  }, [currentUser]);
+  }, [currentUser, fetchUserGroups]);
 
   // Fetch active group details from backend when logged in
   const fetchActiveGroupDetails = useCallback(async () => {
@@ -179,7 +180,7 @@ export default function App() {
     if (currentUser) {
       fetchActiveGroupDetails();
     }
-  }, [currentUser, activeGroupId]);
+  }, [currentUser, activeGroupId, fetchActiveGroupDetails]);
 
   // Rule: Refetch on window focus and every ~15s while group is open
   useEffect(() => {
@@ -217,7 +218,7 @@ export default function App() {
         setIsJoinModalOpen(true);
       }
     }
-  }, [currentUser]);
+  }, [currentUser, fetchUserGroups]);
 
   // Sync to localStorage when offline
   useEffect(() => {
@@ -255,44 +256,36 @@ export default function App() {
   }, [isMuted]);
 
   // Derived Active Group & Members
-  const activeGroup = groups.find((g) => g.id === activeGroupId) || groups[0] || {
-    id: 'grp_default',
-    name: 'General',
-    emoji: '📁',
-    currency: 'INR',
-    expenses: [],
-    settlements: [],
-    memberIds: [],
-  };
+  const activeGroup = groups.find((g) => g.id === activeGroupId) || groups[0] || null;
 
-  const groupCurrency = activeGroup.currency || 'INR';
+  const groupCurrency = activeGroup?.currency || 'INR';
 
   // Group members list
-  const groupMembers = activeGroup.members && activeGroup.members.length > 0
-    ? activeGroup.members
-    : members.filter((m) =>
-        (activeGroup.memberIds || []).includes(m.id)
-      );
+  const groupMembers = activeGroup
+    ? (activeGroup.members && activeGroup.members.length > 0
+        ? activeGroup.members
+        : members.filter((m) => (activeGroup.memberIds || []).includes(m.id)))
+    : [];
 
   // Determine current active user in the group
   let currentMember = null;
   if (currentUser) {
     currentMember = groupMembers.find(
-      (m) => m.userId === currentUser.id || m.name?.toLowerCase().includes(currentUser.username.toLowerCase())
+      (m) => m.userId === currentUser.id || m.name?.toLowerCase().includes(currentUser.username?.toLowerCase() || '')
     );
   }
   if (!currentMember) {
     currentMember = groupMembers[0] || {
-      id: 'm_guest',
-      name: currentUser?.display_name || 'You',
+      id: currentUser ? `m_${currentUser.id}` : 'm_guest',
+      name: currentUser?.display_name || currentUser?.username || 'You',
       emoji: currentUser?.emoji || '⚡',
       color: currentUser?.color || '#FF2E93',
     };
   }
 
   // Mathematical Calculations in group currency
-  const expenses = activeGroup.expenses || [];
-  const settlements = activeGroup.settlements || [];
+  const expenses = activeGroup?.expenses || [];
+  const settlements = activeGroup?.settlements || [];
   const totalGroupSpend = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
   // Net Balances Map
@@ -483,22 +476,17 @@ export default function App() {
         await api.deleteGroup(groupIdToDelete);
         const remaining = groups.filter((g) => g.id !== groupIdToDelete);
         setGroups(remaining);
-        if (remaining.length > 0) setActiveGroupId(remaining[0].id);
+        setActiveGroupId(remaining.length > 0 ? remaining[0].id : null);
         sounds.playSuccess();
       } catch (err) {
         sounds.playBuzzer();
         alert(`Delete failed: ${err.message}`);
       }
     } else {
-      if (groups.length <= 1) {
-        sounds.playBuzzer();
-        alert('You must keep at least one group in the tracker!');
-        return;
-      }
       pushUndoSnapshot();
       const remaining = groups.filter((g) => g.id !== groupIdToDelete);
       setGroups(remaining);
-      setActiveGroupId(remaining[0].id);
+      setActiveGroupId(remaining.length > 0 ? remaining[0].id : null);
       sounds.playSuccess();
     }
   };
@@ -543,42 +531,47 @@ export default function App() {
     }
   };
 
-  // Load Demo Group into Neon account
-  const handleLoadDemoGroup = async () => {
-    if (currentUser) {
-      try {
-        const res = await api.loadDemoGroup();
-        if (res.group) {
-          setGroups((prev) => [res.group, ...prev]);
-          setActiveGroupId(res.group.id);
-          await fetchActiveGroupDetails();
-        }
-      } catch (err) {
-        sounds.playBuzzer();
-        alert(`Failed to load demo group: ${err.message}`);
-      }
-    } else {
-      // Reset local demo data
-      setGroups(INITIAL_GROUPS);
-      setMembers(INITIAL_MEMBERS);
-      setActivities(INITIAL_ACTIVITY);
-      setActiveGroupId('grp_goa');
-      setUndoStack([]);
-    }
-  };
-
   // Logout
   const handleLogout = async () => {
     try {
       await api.logout();
       setCurrentUser(null);
-      setGroups(INITIAL_GROUPS);
-      setMembers(INITIAL_MEMBERS);
-      setActiveGroupId('grp_goa');
+      const savedGroups = localStorage.getItem(STORAGE_KEY_GROUPS);
+      const parsedGroups = savedGroups ? JSON.parse(savedGroups) : [];
+      const savedMembers = localStorage.getItem(STORAGE_KEY_MEMBERS);
+      const parsedMembers = savedMembers ? JSON.parse(savedMembers) : [];
+      setGroups(parsedGroups);
+      setMembers(parsedMembers);
+      setActiveGroupId(parsedGroups[0]?.id || null);
       sounds.playSuccess();
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Quick Action Handlers
+  const handleOpenAddExpense = () => {
+    if (!activeGroup) {
+      sounds.playBuzzer();
+      alert('Create a group first before adding expenses!');
+      setGroupToEdit(null);
+      setIsGroupModalOpen(true);
+      return;
+    }
+    setEditingExpense(null);
+    setIsAddExpenseOpen(true);
+  };
+
+  const handleOpenSettle = (prefill = null) => {
+    if (!activeGroup) {
+      sounds.playBuzzer();
+      alert('Create a group first before settling up!');
+      setGroupToEdit(null);
+      setIsGroupModalOpen(true);
+      return;
+    }
+    setSettlePrefill(prefill);
+    setIsSettleOpen(true);
   };
 
   return (
@@ -589,7 +582,7 @@ export default function App() {
         totalSpend={totalGroupSpend}
         youOwe={userNetBalance < -0.005 ? Math.abs(userNetBalance) : 0}
         youGetBack={userNetBalance > 0.005 ? userNetBalance : 0}
-        activeGroupName={activeGroup.name}
+        activeGroupName={activeGroup?.name || ''}
         expenseCount={expenses.length}
         groupCurrency={groupCurrency}
       />
@@ -616,7 +609,6 @@ export default function App() {
         isMuted={isMuted}
         onToggleMute={() => setIsMuted(!isMuted)}
         onOpenActivity={() => setIsActivityOpen(true)}
-        onLoadDemoGroup={handleLoadDemoGroup}
         onImportLocalData={handleImportLocalData}
         hasLocalData={hasLocalData}
       />
@@ -624,141 +616,186 @@ export default function App() {
       {/* 3. MAIN DASHBOARD CONTENT */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-2">
         
-        {/* Active Group Hero Badge Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-4 mb-2">
-          <div className="flex items-center gap-2">
-            <span
-              className="text-2xl sm:text-3xl p-2 border-3 border-black rounded-lg brutal-shadow-sm -rotate-2 min-h-[44px] flex items-center justify-center"
-              style={{ backgroundColor: activeGroup.signatureColor || activeGroup.signature_color || '#FF7A00' }}
-            >
-              {activeGroup.emoji}
-            </span>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="font-display text-xl sm:text-3xl text-black dark:text-white tracking-wide">
-                  {activeGroup.name}
-                </h1>
-                <span className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#B6FF00] text-black rounded font-bold">
-                  {groupMembers.length} MEMBERS
-                </span>
-                <span className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#FFE600] text-black rounded font-bold">
-                  {groupCurrency}
-                </span>
-                {(activeGroup.inviteCode || activeGroup.invite_code) && (
-                  <button
-                    onClick={() => {
-                      const code = activeGroup.inviteCode || activeGroup.invite_code;
-                      navigator.clipboard.writeText(code);
-                      sounds.playSuccess();
-                      alert(`Invite code copied: ${code}`);
-                    }}
-                    title="Click to copy invite code"
-                    className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#00F0FF] text-black rounded font-bold hover:bg-[#4cf2ff] brutal-btn"
-                  >
-                    CODE: {activeGroup.inviteCode || activeGroup.invite_code}
-                  </button>
-                )}
-              </div>
-              <p className="text-xs font-handwriting text-gray-600 dark:text-gray-300">
-                Logged in as <strong>{currentMember.name}</strong> • 100% integer paise precision
-              </p>
+        {!activeGroup ? (
+          /* Loud Maximalist Empty State: No Groups Yet */
+          <div className="max-w-2xl mx-auto my-12 p-8 sm:p-12 bg-white dark:bg-[#161722] border-4 border-black dark:border-[#FFE600] rounded-2xl brutal-shadow-xl text-center relative overflow-hidden">
+            <div className="washi-tape-top"></div>
+            
+            <div className="inline-block bg-[#FFE600] text-black font-mono-numbers text-xs font-black px-3 py-1 border-2 border-black -rotate-2 brutal-shadow-sm mb-4">
+              ★ READY FOR TAKE OFF ★
             </div>
+
+            <div className="text-6xl sm:text-7xl mb-4 animate-bounce">
+              🚀
+            </div>
+
+            <h1 className="font-display text-3xl sm:text-4xl text-black dark:text-white tracking-wide mb-3">
+              NO EXPENSE GROUPS YET!
+            </h1>
+
+            <p className="font-handwriting text-lg sm:text-xl text-gray-700 dark:text-gray-300 max-w-md mx-auto mb-8">
+              Start splitting bills for road trips, flat rent, dinner parties, or weekend getaways with zero drama.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  setGroupToEdit(null);
+                  setIsGroupModalOpen(true);
+                }}
+                className="w-full sm:w-auto bg-[#FFE600] hover:bg-[#fff04d] text-black font-display text-sm sm:text-base px-8 py-4 border-3 border-black rounded-lg brutal-shadow brutal-btn flex items-center justify-center gap-2 min-h-[48px]"
+              >
+                <span>+ CREATE YOUR FIRST GROUP</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  sounds.playPop();
+                  setIsJoinModalOpen(true);
+                }}
+                className="w-full sm:w-auto bg-[#00F0FF] hover:bg-[#4cf2ff] text-black font-heading text-sm px-6 py-4 border-3 border-black rounded-lg brutal-shadow-sm brutal-btn flex items-center justify-center gap-2 min-h-[48px]"
+              >
+                <span>🔑 JOIN WITH CODE</span>
+              </button>
+            </div>
+
+            {!currentUser && (
+              <div className="mt-8 pt-6 border-t-2 border-dashed border-gray-300 dark:border-gray-700">
+                <p className="text-xs font-mono-numbers text-gray-500 dark:text-gray-400 mb-3">
+                  Want to sync across devices and invite friends online?
+                </p>
+                <button
+                  onClick={() => {
+                    sounds.playPop();
+                    setIsAuthModalOpen(true);
+                  }}
+                  className="bg-[#B6FF00] hover:bg-[#cbff3a] text-black font-heading text-xs px-5 py-2.5 border-2 border-black rounded brutal-btn brutal-shadow-sm"
+                >
+                  ⚡ SIGN IN / REGISTER FREE
+                </button>
+              </div>
+            )}
           </div>
+        ) : (
+          <>
+            {/* Active Group Hero Badge Strip */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-4 mb-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-2xl sm:text-3xl p-2 border-3 border-black rounded-lg brutal-shadow-sm -rotate-2 min-h-[44px] flex items-center justify-center"
+                  style={{ backgroundColor: activeGroup.signatureColor || activeGroup.signature_color || '#FF7A00' }}
+                >
+                  {activeGroup.emoji}
+                </span>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="font-display text-xl sm:text-3xl text-black dark:text-white tracking-wide">
+                      {activeGroup.name}
+                    </h1>
+                    <span className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#B6FF00] text-black rounded font-bold">
+                      {groupMembers.length} MEMBERS
+                    </span>
+                    <span className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#FFE600] text-black rounded font-bold">
+                      {groupCurrency}
+                    </span>
+                    {(activeGroup.inviteCode || activeGroup.invite_code) && (
+                      <button
+                        onClick={() => {
+                          const code = activeGroup.inviteCode || activeGroup.invite_code;
+                          navigator.clipboard.writeText(code);
+                          sounds.playSuccess();
+                          alert(`Invite code copied: ${code}`);
+                        }}
+                        title="Click to copy invite code"
+                        className="text-xs font-mono-numbers px-2 py-0.5 border border-black bg-[#00F0FF] text-black rounded font-bold hover:bg-[#4cf2ff] brutal-btn"
+                      >
+                        CODE: {activeGroup.inviteCode || activeGroup.invite_code}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs font-handwriting text-gray-600 dark:text-gray-300">
+                    Logged in as <strong>{currentMember.name}</strong> • 100% integer paise precision
+                  </p>
+                </div>
+              </div>
 
-          {/* Quick Action Pill Buttons (Min 40x40px tap target) */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                sounds.playPop();
-                setSettlePrefill(null);
-                setIsSettleOpen(true);
-              }}
-              className="bg-[#B6FF00] hover:bg-[#caff43] text-black font-heading text-xs px-3.5 py-2.5 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px]"
-            >
-              <span>💸 Settle Up</span>
-            </button>
+              {/* Quick Action Pill Buttons (Min 40x40px tap target) */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleOpenSettle(null)}
+                  className="bg-[#B6FF00] hover:bg-[#caff43] text-black font-heading text-xs px-3.5 py-2.5 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px]"
+                >
+                  <span>💸 Settle Up</span>
+                </button>
 
-            <button
-              onClick={() => {
-                sounds.playPop();
-                setEditingExpense(null);
-                setIsAddExpenseOpen(true);
-              }}
-              className="bg-[#FFE600] hover:bg-[#fff04d] text-black font-heading text-xs px-3.5 py-2.5 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px]"
-            >
-              <span>+ Add Expense</span>
-            </button>
-          </div>
-        </div>
+                <button
+                  onClick={handleOpenAddExpense}
+                  className="bg-[#FFE600] hover:bg-[#fff04d] text-black font-heading text-xs px-3.5 py-2.5 border-2 border-black brutal-shadow-sm brutal-btn rounded uppercase flex items-center gap-1.5 min-h-[40px]"
+                >
+                  <span>+ Add Expense</span>
+                </button>
+              </div>
+            </div>
 
-        {/* Desktop View & Mobile Tab Router */}
-        <div className="space-y-6">
-          
-          {/* Dashboard Stats Bento Bar */}
-          <div className={`transition-all ${mobileTab !== 'dashboard' ? 'hidden sm:block' : 'block'}`}>
-            <DashboardStats
-              totalGroupSpend={totalGroupSpend}
-              userConsumedShare={userConsumedShare}
-              userNetBalance={userNetBalance}
-              currentMember={currentMember}
-              expenseCount={expenses.length}
-              groupCurrency={groupCurrency}
-              onOpenSettle={() => {
-                setSettlePrefill(null);
-                setIsSettleOpen(true);
-              }}
-            />
+            {/* Desktop View & Mobile Tab Router */}
+            <div className="space-y-6">
+              
+              {/* Dashboard Stats Bento Bar */}
+              <div className={`transition-all ${mobileTab !== 'dashboard' ? 'hidden sm:block' : 'block'}`}>
+                <DashboardStats
+                  totalGroupSpend={totalGroupSpend}
+                  userConsumedShare={userConsumedShare}
+                  userNetBalance={userNetBalance}
+                  currentMember={currentMember}
+                  expenseCount={expenses.length}
+                  groupCurrency={groupCurrency}
+                  onOpenSettle={() => handleOpenSettle(null)}
+                />
 
-            {/* Visual Charts Section */}
-            <ChartsSection
-              group={activeGroup}
-              members={groupMembers}
-            />
-          </div>
+                {/* Visual Charts Section */}
+                <ChartsSection
+                  group={activeGroup}
+                  members={groupMembers}
+                />
+              </div>
 
-          {/* Balances & Debt Minimization Section */}
-          <div className={`transition-all ${mobileTab !== 'balances' ? 'hidden sm:block' : 'block'}`}>
-            <BalancesSection
-              group={activeGroup}
-              members={groupMembers}
-              netBalances={netBalances}
-              simplifiedDebts={simplifiedDebts}
-              bilateralDebts={bilateralDebts}
-              onOpenSettleWithPrefill={(prefill) => {
-                setSettlePrefill(prefill);
-                setIsSettleOpen(true);
-              }}
-            />
-          </div>
+              {/* Balances & Debt Minimization Section */}
+              <div className={`transition-all ${mobileTab !== 'balances' ? 'hidden sm:block' : 'block'}`}>
+                <BalancesSection
+                  group={activeGroup}
+                  members={groupMembers}
+                  netBalances={netBalances}
+                  simplifiedDebts={simplifiedDebts}
+                  bilateralDebts={bilateralDebts}
+                  onOpenSettleWithPrefill={(prefill) => handleOpenSettle(prefill)}
+                />
+              </div>
 
-          {/* Expenses List & Filters Section */}
-          <div className={`transition-all ${mobileTab !== 'expenses' ? 'hidden sm:block' : 'block'}`}>
-            <ExpensesList
-              expenses={expenses}
-              members={groupMembers}
-              groupCurrency={groupCurrency}
-              onEditExpense={(exp) => {
-                setEditingExpense(exp);
-                setIsAddExpenseOpen(true);
-              }}
-              onDeleteExpense={handleDeleteExpense}
-              onOpenAddExpense={() => {
-                setEditingExpense(null);
-                setIsAddExpenseOpen(true);
-              }}
-            />
-          </div>
+              {/* Expenses List & Filters Section */}
+              <div className={`transition-all ${mobileTab !== 'expenses' ? 'hidden sm:block' : 'block'}`}>
+                <ExpensesList
+                  expenses={expenses}
+                  members={groupMembers}
+                  groupCurrency={groupCurrency}
+                  onEditExpense={(exp) => {
+                    setEditingExpense(exp);
+                    setIsAddExpenseOpen(true);
+                  }}
+                  onDeleteExpense={handleDeleteExpense}
+                  onOpenAddExpense={handleOpenAddExpense}
+                />
+              </div>
 
-        </div>
+            </div>
+          </>
+        )}
 
       </main>
 
       {/* 4. FLOATING CONTROLS & MOBILE BAR */}
       <FloatingControls
-        onOpenAddExpense={() => {
-          setEditingExpense(null);
-          setIsAddExpenseOpen(true);
-        }}
+        onOpenAddExpense={handleOpenAddExpense}
         activeTab={mobileTab}
         onSelectTab={(tab) => setMobileTab(tab)}
         onOpenActivity={() => setIsActivityOpen(true)}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AVATAR_COLORS, AVATAR_EMOJIS } from '../utils/demoData';
-import { X, Plus, Trash2, Users, Palette, Copy, Check, Share2 } from 'lucide-react';
+import { AVATAR_COLORS, AVATAR_EMOJIS } from '../utils/constants';
+import { X, Plus, Trash2, Users, Palette, Copy, Check } from 'lucide-react';
 import { sounds } from '../utils/audio';
 
 const GROUP_PALETTES = [
@@ -24,8 +24,6 @@ export default function GroupModal({
   onAddNewMember,
   currentUserId,
 }) {
-  if (!isOpen) return null;
-
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('🏖️');
   const [signatureColor, setSignatureColor] = useState('#FF7A00');
@@ -36,6 +34,7 @@ export default function GroupModal({
   const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return;
     if (groupToEdit) {
       setName(groupToEdit.name || '');
       setEmoji(groupToEdit.emoji || '🏖️');
@@ -56,6 +55,8 @@ export default function GroupModal({
     setMemberError('');
     setCopiedCode(false);
   }, [groupToEdit, isOpen]);
+
+  if (!isOpen) return null;
 
   // Toggle member inclusion
   const handleToggleMember = (mId) => {
@@ -212,7 +213,7 @@ export default function GroupModal({
               </label>
               <input
                 type="text"
-                placeholder="e.g. Goa Trip, Flat 402, Hackathon..."
+                placeholder="e.g. Weekend Trip, Apartment 4B, Hackathon..."
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required

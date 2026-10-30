@@ -133,7 +133,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
-    const { password_hash, ...safeUser } = user;
+    const { password_hash: _password_hash, ...safeUser } = user;
     const token = signToken(safeUser);
     setAuthCookie(res, token);
 
@@ -872,7 +872,7 @@ app.post('/api/import-local', authMiddleware, async (req, res) => {
         const newMId = `m_${crypto.randomUUID()}`;
         memberIdMap[oldMId] = newMId;
 
-        const isCurrent = oldMId === 'm_rahul' || m.isUser;
+        const isCurrent = Boolean(m.isUser);
         await query(
           `INSERT INTO group_members (id, group_id, user_id, display_name, emoji, color)
            VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -975,106 +975,6 @@ app.post('/api/import-local', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Import error:', err);
     res.status(500).json({ error: 'Failed to import local data.' });
-  }
-});
-
-// Load Demo Group for the user
-app.post('/api/load-demo', authMiddleware, async (req, res) => {
-  try {
-    const groupId = `grp_${crypto.randomUUID()}`;
-    const inviteCode = generateInviteCode();
-
-    await query(
-      `INSERT INTO groups (id, name, emoji, signature_color, accent_color, currency, invite_code, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        groupId,
-        'Goa Trip 🏖️',
-        '🏖️',
-        '#FF7A00',
-        '#FFE600',
-        'INR',
-        inviteCode,
-        req.user.id,
-      ]
-    );
-
-    // Creator member
-    const mYouId = `m_${crypto.randomUUID()}`;
-    await query(
-      `INSERT INTO group_members (id, group_id, user_id, display_name, emoji, color)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [mYouId, groupId, req.user.id, `${req.user.display_name} (You)`, req.user.emoji || '⚡', req.user.color || '#FF2E93']
-    );
-
-    // Placeholder members
-    const placeholders = [
-      { name: 'Priya', emoji: '🦄', color: '#FFE600' },
-      { name: 'Amit', emoji: '🦁', color: '#2B2BFF' },
-      { name: 'Sneha', emoji: '🦊', color: '#B6FF00' },
-      { name: 'Vikram', emoji: '👾', color: '#FF7A00' },
-    ];
-
-    const pIds = {};
-    for (const p of placeholders) {
-      const pid = `m_${crypto.randomUUID()}`;
-      pIds[p.name] = pid;
-      await query(
-        `INSERT INTO group_members (id, group_id, user_id, display_name, emoji, color)
-         VALUES ($1, $2, NULL, $3, $4, $5)`,
-        [pid, groupId, p.name, p.emoji, p.color]
-      );
-    }
-
-    // Add Villa expense: 35,000 INR = 3,500,000 paise (paid by You, split 5 ways = 700,000 paise each)
-    const exp1Id = `exp_${crypto.randomUUID()}`;
-    await query(
-      `INSERT INTO expenses (id, group_id, description, amount_paise, category, date, split_method, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [exp1Id, groupId, 'Vagator Cliffside Villa', '3500000', 'stay', '2026-10-24', 'equal', 'Private infinity pool', req.user.id]
-    );
-    await query(
-      'INSERT INTO expense_payers (id, expense_id, member_id, amount_paise) VALUES ($1, $2, $3, $4)',
-      [`pyr_${crypto.randomUUID()}`, exp1Id, mYouId, '3500000']
-    );
-    const allMembersList = [mYouId, ...Object.values(pIds)];
-    for (const memId of allMembersList) {
-      await query(
-        'INSERT INTO expense_splits (id, expense_id, member_id, amount_paise) VALUES ($1, $2, $3, $4)',
-        [`spl_${crypto.randomUUID()}`, exp1Id, memId, '700000']
-      );
-    }
-
-    // Add Seafood Feast: 8,400 INR = 840,000 paise (paid by Priya)
-    const exp2Id = `exp_${crypto.randomUUID()}`;
-    await query(
-      `INSERT INTO expenses (id, group_id, description, amount_paise, category, date, split_method, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [exp2Id, groupId, "Fisherman's Wharf Seafood Feast", '840000', 'food', '2026-10-25', 'equal', 'Butter garlic crab', req.user.id]
-    );
-    await query(
-      'INSERT INTO expense_payers (id, expense_id, member_id, amount_paise) VALUES ($1, $2, $3, $4)',
-      [`pyr_${crypto.randomUUID()}`, exp2Id, pIds['Priya'], '840000']
-    );
-    for (const memId of allMembersList) {
-      await query(
-        'INSERT INTO expense_splits (id, expense_id, member_id, amount_paise) VALUES ($1, $2, $3, $4)',
-        [`spl_${crypto.randomUUID()}`, exp2Id, memId, '168000']
-      );
-    }
-
-    // Settlement: Vikram paid You ₹3,000 = 300,000 paise
-    await query(
-      `INSERT INTO settlements (id, group_id, from_member, to_member, amount_paise, date, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [`stl_${crypto.randomUUID()}`, groupId, pIds['Vikram'], mYouId, '300000', '2026-10-27', 'GPay for villa']
-    );
-
-    const groupData = await fetchFullGroupData(groupId);
-    res.json({ group: groupData, message: 'Loaded demo group successfully!' });
-  } catch (err) {
-    console.error('Load demo error:', err);
-    res.status(500).json({ error: 'Could not load demo group.' });
   }
 });
 

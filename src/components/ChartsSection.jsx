@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CATEGORIES } from '../utils/demoData';
+import { CATEGORIES } from '../utils/constants';
 import { formatCurrency } from '../utils/expenseLogic';
 import { PieChart, BarChart3, Users, ChevronDown, ChevronUp } from 'lucide-react';
 import { sounds } from '../utils/audio';
@@ -32,20 +32,21 @@ export default function ChartsSection({ group, members }) {
     .sort((a, b) => b.total - a.total);
 
   // SVG Donut calculation
-  let cumulativeAngle = 0;
-  const donutSegments = categoryData.map((cat) => {
+  const donutSegments = categoryData.reduce((acc, cat) => {
     const fraction = totalSpend > 0 ? cat.total / totalSpend : 0;
     const angle = fraction * 360;
-    const startAngle = cumulativeAngle;
-    cumulativeAngle += angle;
-    return {
+    const startAngle = acc.currentAngle;
+    const nextAngle = startAngle + angle;
+    acc.segments.push({
       ...cat,
       fraction,
       percentage: (fraction * 100).toFixed(1),
       startAngle,
       angle,
-    };
-  });
+    });
+    acc.currentAngle = nextAngle;
+    return acc;
+  }, { segments: [], currentAngle: 0 }).segments;
 
   // 2. Data for Spending Over Time
   const dateMap = {};
@@ -164,8 +165,14 @@ export default function ChartsSection({ group, members }) {
       {!collapsed && (
         <div className="mt-4 pt-2">
           {expenses.length === 0 ? (
-            <div className="py-12 text-center text-gray-400 font-mono-numbers">
-              No expenses recorded yet in this group to plot charts.
+            <div className="py-12 text-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-6 bg-[#FAF9F5] dark:bg-[#12131C]">
+              <span className="text-4xl mb-2 block animate-pulse">📊</span>
+              <p className="font-heading text-sm sm:text-base text-black dark:text-white uppercase tracking-wider">
+                No expense data to chart yet!
+              </p>
+              <p className="font-handwriting text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Add your first expense to visualize category breakdowns, spending timelines, and member shares.
+              </p>
             </div>
           ) : (
             <>

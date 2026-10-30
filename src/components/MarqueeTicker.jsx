@@ -9,20 +9,33 @@ export default function MarqueeTicker({
   expenseCount = 0,
   groupCurrency = 'INR',
 }) {
-  const tickerItems = [
-    `★ ACTIVE GROUP: ${activeGroupName.toUpperCase()} ★`,
-    `★ TOTAL SPEND: ${formatCurrency(totalSpend, groupCurrency)} ★`,
-    youOwe > 0.005
-      ? `🚨 YOU OWE ${formatCurrency(youOwe, groupCurrency)} — PAY UP OR FACE THE SASS! 💸 ★`
-      : `✨ YOU OWE NOTHING! LIVING THE DEBT-FREE LIFE 😎 ★`,
-    youGetBack > 0.005
-      ? `🤑 YOU ARE OWED ${formatCurrency(youGetBack, groupCurrency)} — TIME TO COLLECT! ★`
-      : `★ BALANCED VIBES ONLY ★`,
-    `★ ${expenseCount} TOTAL EXPENSES LOGGED ★`,
-    `★ SPLIT FAIR, STAY FRIENDS ★`,
-    `★ 100% INTEGER PAISE PRECISION (ZERO ROUNDING LEAKS) ★`,
-    `★ MAXIMALIST MONEY TRACKING ⚡ ★`,
-  ];
+  let tickerItems = [];
+
+  if (!activeGroupName || expenseCount === 0) {
+    tickerItems = [
+      '★ SPLIT//MAX — MAXIMALIST SHARED EXPENSE TRACKER ⚡ ★',
+      '★ ADD YOUR FIRST GROUP TO START TRACKING ★',
+      '★ SPLIT FAIR, STAY FRIENDS ★',
+      '★ 100% INTEGER PAISE PRECISION (ZERO ROUNDING LEAKS) ★',
+      '★ MAXIMALIST MONEY TRACKING 🍕 ★',
+      '★ NO DEBTS LEFT BEHIND ★',
+    ];
+  } else {
+    tickerItems = [
+      `★ ACTIVE GROUP: ${activeGroupName.toUpperCase()} ★`,
+      `★ TOTAL SPEND: ${formatCurrency(totalSpend, groupCurrency)} ★`,
+      youOwe > 0.005
+        ? `🚨 YOU OWE ${formatCurrency(youOwe, groupCurrency)} — PAY UP OR FACE THE SASS! 💸 ★`
+        : `✨ YOU OWE NOTHING! LIVING THE DEBT-FREE LIFE 😎 ★`,
+      youGetBack > 0.005
+        ? `🤑 YOU ARE OWED ${formatCurrency(youGetBack, groupCurrency)} — TIME TO COLLECT! ★`
+        : `★ BALANCED VIBES ONLY ★`,
+      `★ ${expenseCount} TOTAL EXPENSES LOGGED ★`,
+      `★ SPLIT FAIR, STAY FRIENDS ★`,
+      `★ 100% INTEGER PAISE PRECISION (ZERO ROUNDING LEAKS) ★`,
+      `★ MAXIMALIST MONEY TRACKING ⚡ ★`,
+    ];
+  }
 
   const fullText = [...tickerItems, ...tickerItems].join('   ');
 

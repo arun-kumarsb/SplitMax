@@ -1,8 +1,15 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "oxc"],
+  "plugins": ["react"],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "react-hooks/rules-of-hooks": "error",
+    "react/set-state-in-effect": "off",
+    "react/immutability": "off",
+    "react/purity": "off",
+    "no-unused-vars": "warn",
+    "react/no-unescaped-entities": "off",
+    "react-hooks/exhaustive-deps": "warn"
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**"]
 }

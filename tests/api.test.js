@@ -195,13 +195,13 @@ describe('Authentication & Group Membership API', () => {
       .post('/api/groups')
       .set('Cookie', [authCookieAlice])
       .send({
-        name: 'Goa Trip 🏖️',
+        name: 'Weekend Trip 🏖️',
         emoji: '🏖️',
         currency: 'INR',
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.group.name).toBe('Goa Trip 🏖️');
+    expect(res.body.group.name).toBe('Weekend Trip 🏖️');
     expect(res.body.group.inviteCode).toBeDefined();
     groupAlphaId = res.body.group.id;
     inviteCodeAlpha = res.body.group.inviteCode;
